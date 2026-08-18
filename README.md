@@ -16,7 +16,8 @@ El **inception-framework** completo en una sola casa: spec, scripts, skills, pla
 | Versionado | Semver explícito desde `0.1.0` + `CHANGELOG.md`; update = bump del kit, jamás cirugía por repo; `autoUpdate` encendido en consumidores |
 | Contenido v0.1 | 10 scripts generalizados (`bin/`) · **6 skills**: `launch`, `close`, `synthesis`, `status`, `ingest`, `plan` (el cierre retro-lenient no es skill: lo absorbe el flujo `/adopt`) · plantillas internas al plugin · hook de inmutabilidad + `kit-init` idempotente (única costura por-repo) · skills de claude.ai: `research-preflight`, `research-close`, `new-run` (en `claude-ai-skills/`; el humano las copia a su cuenta) · `framework.config.yaml` por proyecto |
 | Nomenclatura | **Inglés** para todo nombre de skill, comando y campo de contrato (ratificado 2026-08-18); un solo idioma, cero híbridos |
-| Corridas | `runs: N` + `mode: independent \| chained` en el protocol (default `independent`); `chained` = partes deliberadas, una unidad epistémica; el contexto se declara, jamás se improvisa |
+| Runs | `runs: N` + `mode: independent \| chained` en el protocol (default `independent`); etiquetas `run-01..run-NN` (un nombre por concepto — "C1/C2" del corpus histórico = "corrida", queda solo en records inmutables con glosario); `chained` = partes deliberadas, una unidad epistémica; el contexto se declara, jamás se improvisa |
+| Contexto | Postura declarable por unidad: `context: clean-room \| scoped` — clean-room para exploración/competencia de ideas/etapas tempranas (solo objetivo neutral, cero ideología del proyecto — generaliza la sala limpia y "la semilla nunca viaja"); scoped para integración (needs + decisiones vigentes, nada más). Contra el eco por frecuencia (acoplamiento ideológico) |
 | Migración de prueba | daedalus primero, meridian después |
 
 ## Principios (heredados del plan de mejoras — no negociables)

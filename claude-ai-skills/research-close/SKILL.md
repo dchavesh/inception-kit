@@ -26,10 +26,10 @@ date: AAAA-MM-DD
 
 Reglas duras:
 
-- En §2, CADA afirmación es un ítem de lista y termina con su etiqueta y fuente: `- **Afirmación.** (madurez · volatilidad · AAAA-MM) — rNN-srcNN`. Madurez: establecido / respaldado / plausible / especulativo (sin fuente = especulativo, y solo entonces puede ir sin src-ID). Volatilidad: alta / media / baja. Siempre con año. Si hubo varias corridas, conservá la **atribución por corrida** (C1, C2…) en cada afirmación.
+- En §2, CADA afirmación es un ítem de lista y termina con su etiqueta y fuente: `- **Afirmación.** (madurez · volatilidad · AAAA-MM) — rNN-srcNN`. Madurez: establecido / respaldado / plausible / especulativo (sin fuente = especulativo, y solo entonces puede ir sin src-ID). Volatilidad: alta / media / baja. Siempre con año. Si hubo varios runs, conservá la **atribución por run** (`run-01`, `run-02`…) en cada afirmación.
 - §3 es una tabla con columnas EXACTAS: `| ID | Título | Autor/Org | Fecha | Tipo | Calidad | Volatilidad |`. IDs con gramática `rNN-src01, rNN-src02…` (dos dígitos, sin huecos); Calidad = una letra A–D (rúbrica del Bloque Común); URL dentro de Título o Tipo si la tenés; si no quedó registrada, escribí "URL n/r" — jamás la reconstruyas de memoria.
 - §7 es una tabla con columnas EXACTAS y sin celdas vacías: `| ID | Requirement | Why | Evidence & maturity | Core or Playbook | Area |`. IDs `rNN-req01, rNN-req02…` (Core = invariante; Playbook = específico de fuente/sector). Evidence siempre con madurez; si no hay evidencia: "sin evidencia" + especulativo.
-- §4: contradicciones entre fuentes **o entre corridas** reportadas como conflicto, sin resolverlas en silencio.
+- §4: contradicciones entre fuentes **o entre runs** reportadas como conflicto, sin resolverlas en silencio.
 
 ## Documento 2 — `02-findings.md` (borrador de síntesis, máximo 2 páginas)
 
