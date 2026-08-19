@@ -22,7 +22,6 @@ El **inception-framework** completo en una sola casa: spec, scripts, skills, pla
 | Migración | Por capas, voluntaria, al subir versión del kit/spec (`/migrate`; `kit-init` es su runner): evergreen in-place · derivados regenerados · records de lectura por supersesión mecánica (diff como evidencia) · **verbatim bronze jamás se reescribe** (se lee con glosario histórico). **Rastro obligatorio:** log de migraciones en el registry + anotación en el sidecar de cada record afectado — la incisión va al sidecar, jamás a los bytes (el sha256 es la identidad del record) |
 | Validación | Repos desechables durante el desarrollo (sembrados por `kit-init`). El diagnóstico read-only de **Chimera** ya se ejecutó (2026-08-18, `meridian/docs/research/diagnostico-chimera-v1.md`) y alimenta el diseño de `/normalize` — veredicto: cero mecanismos nuevos requeridos |
 | Adopción | **DESPUÉS de completar las fases 1–3** (ratificado 2026-08-18): ningún proyecto va primero por diseño — meridian, daedalus, chimera-refactor y los demás reciben lo mismo; validación del desarrollo contra repos desechables, jamás proyectos reales |
-| Horizonte | El kit es el puente, no el destino: a futuro daedalus absorbe el framework como **runtime/harness** (versión mejorada, framing más amplio) en su propio programa con sus propios gates — fuera del alcance del kit; nada del horizonte contamina el diseño presente |
 
 ## Principios (heredados del plan de mejoras — no negociables)
 
