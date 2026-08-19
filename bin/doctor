@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Chequeo de integridad del repo — determinista, sin juicio y sin escribir nada.
+
+Valida: instalación del kit (config, hook, copia vendorizada en sintonía);
+frontmatter y status de protocols; correspondencia dir↔id; grafo de `needs`;
+findings vigentes parseables (madurez + volatilidad por hallazgo);
+supersesiones consistentes (todo `.vN` con `supersedes:` + fila en el registry);
+unicidad de `con-NN` y `<unit>-reqNN`; y `STATUS.md` fresco.
+
+Exit 0 = sano · exit 1 = problemas (lista completa en stdout).
+Uso: doctor [--quiet]
+"""
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import VERSION
+from kitlib import config as kitconfig
+from kitlib import vocab
+from kitlib.ids import (latest_artifact, load_units, registry_id_pattern,
+                        sub_id_pattern, unit_pattern)
+from kitlib.installation import Installation
+from kitlib.md import numbered_findings, parse_frontmatter
+from kitlib.status import build_board, without_timestamp
+
+VERSIONED_RECORD_GLOB = "*/0[123]-*.v*.md"
+
+
+def check_installation(config, problems: list) -> None:
+    installation = Installation(config.root)
+    if config.kit_version != VERSION:
+        problems.append(f"framework.config.yaml: `kit_version: {config.kit_version}` "
+                        f"pero el kit instalado es {VERSION} — correr `kit-init` "
+                        "(sintonía por migración, principio #7)")
+    if not installation.vendored_hook.exists():
+        problems.append(f"{config.relative(installation.vendored_hook)}: falta el hook "
+                        "de inmutabilidad — correr `kit-init`")
+    elif not installation.shim_is_installed():
+        problems.append(f"{installation.hooks_dir_relative()}/pre-commit: el shim del "
+                        "hook no está instalado en la ruta efectiva de hooks — correr `kit-init`")
+    if not config.constitution.exists():
+        problems.append(f"{config.relative(config.constitution)}: no existe — el "
+                        "framework necesita una constitution ratificada (gate humano)")
+
+
+def check_protocols(units, problems: list) -> None:
+    for unit in units.values():
+        if not unit.dir.name.startswith(f"{unit.id}-"):
+            problems.append(f"{unit.id}: directorio '{unit.dir.name}' no calza con el id")
+        for need in unit.needs:
+            if need == unit.id:
+                problems.append(f"{unit.id}: se necesita a sí misma")
+            elif need not in units:
+                problems.append(f"{unit.id}: need '{need}' no existe")
+        if unit.status == "done" and not unit.session:
+            problems.append(f"{unit.id}: done sin session sellada")
+
+
+def check_findings(config, units, problems: list) -> None:
+    for unit in units.values():
+        if unit.status != "done":
+            continue
+        findings = latest_artifact(unit.dir, "02-findings")
+        if not findings.exists():
+            problems.append(f"{unit.id}: sin 02-findings (unidad done)")
+            continue
+        label = f"{findings.name} ({unit.id})"
+        meta, body = parse_frontmatter(findings.read_text(encoding="utf-8"))
+        if not meta.get("date"):
+            problems.append(f"{label}: frontmatter sin date")
+        entries = numbered_findings(body)
+        if not entries:
+            problems.append(f"{label}: sin hallazgos numerados '1. **...**'")
+        for number, _, segment in entries:
+            annotations = vocab.ANNOTATION_RE.findall(segment)
+            if not annotations:
+                problems.append(f"{label}: hallazgo {number} sin etiqueta de madurez parseable")
+            elif not any(vocab.has_volatility(a) for a in annotations):
+                problems.append(f"{label}: hallazgo {number} sin volatilidad parseable")
+
+
+def check_supersessions(config, problems: list) -> None:
+    record = config.registry_file("supersessions")
+    text = record.read_text(encoding="utf-8") if record.exists() else ""
+    for versioned in sorted(config.investigations.glob(VERSIONED_RECORD_GLOB)):
+        meta, _ = parse_frontmatter(versioned.read_text(encoding="utf-8"))
+        label = f"{versioned.parent.name}/{versioned.name}"
+        if not meta.get("supersedes"):
+            problems.append(f"{label}: .vN sin 'supersedes:' en frontmatter")
+            continue
+        base = versioned.parent / re.sub(r"\.v\d+\.md$", ".md", versioned.name)
+        if not base.exists():
+            problems.append(f"{label}: el record base superado no existe")
+        if versioned.name not in text:
+            problems.append(f"{label}: sin fila en {config.relative(record)}")
+
+
+def check_unique_ids(config, problems: list) -> None:
+    targets = (
+        ("conflicts", registry_id_pattern(config, "con").pattern.strip("^$"), "con-NN"),
+        ("requirements", sub_id_pattern(config, "req").pattern, "<unit>-reqNN"),
+    )
+    for name, pattern, label in targets:
+        path = config.registry_file(name)
+        if not path.exists():
+            problems.append(f"{config.relative(path)}: no existe — correr `kit-init`")
+            continue
+        found = re.findall(rf"^\| ({pattern}) \|", path.read_text(encoding="utf-8"), re.M)
+        for identifier in sorted({i for i in found if found.count(i) > 1}):
+            problems.append(f"{path.name}: {identifier} tiene {found.count(identifier)} "
+                            f"filas ({label} son permanentes y únicos)")
+
+
+def check_status_board(config, problems: list) -> None:
+    board = config.registry_file("status")
+    if not board.exists():
+        problems.append(f"{config.relative(board)}: no existe — correr `derive-status`")
+        return
+    current = board.read_text(encoding="utf-8")
+    if without_timestamp(current) != without_timestamp(build_board(config)):
+        problems.append(f"{config.relative(board)} desactualizado respecto de los "
+                        "frontmatter (correr `derive-status`)")
+
+
+def main() -> None:
+    config = kitconfig.load()
+    problems: list[str] = []
+    check_installation(config, problems)
+    units = load_units(config)
+    check_protocols(units, problems)
+    check_findings(config, units, problems)
+    check_supersessions(config, problems)
+    check_unique_ids(config, problems)
+    check_status_board(config, problems)
+
+    if problems:
+        for problem in problems:
+            print(f"✗ {problem}")
+        print(f"\ndoctor: {len(problems)} problema(s) de integridad.")
+        sys.exit(1)
+    if "--quiet" not in sys.argv:
+        print(f"doctor: repo íntegro ({len(units)} unidad(es) · kit {VERSION}) — "
+              "instalación, protocols, findings, supersesiones, IDs y STATUS consistentes.")
+
+
+if __name__ == "__main__":
+    main()

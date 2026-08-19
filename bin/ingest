@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""Ingesta verificada de archivos externos al `inbox/` del repo.
+
+Por cada archivo: copia al inbox (nombre saneado a kebab-case ASCII si hace
+falta), calcula sha256 y agrega fila al log de ingesta del registry
+(append-only). Luego, EN ORDEN: commit de inbox+log → push → verificación
+contra el remoto (`git ls-remote`: el SHA de la rama remota debe ser HEAD — las
+≥2 copias independientes que exige el benchmark) → borrado del original,
+archivo por archivo re-verificado por hash, jamás por carpeta. Si el push o la
+verificación remota fallan, NADA se borra y el script sale con error.
+
+`--keep` conserva los originales (p. ej. documentación dura cuyo original vive
+fuera del repo). Si el destino ya existe con distinto contenido: falla — el
+inbox es inmutable.
+
+El push usa el remoto por nombre (`origin` salvo `--remote`), así que respeta
+la configuración de git del usuario: alias SSH, credenciales, lo que sea.
+
+Uso: ingest ARCHIVO... [--keep] [--remote NOMBRE]
+"""
+import hashlib
+import re
+import shutil
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib.dates import today
+from kitlib.errors import fail
+
+CHUNK = 1 << 20
+SUBJECT_LIMIT = 120
+DEFAULT_REMOTE = "origin"
+
+
+def sane_name(name: str) -> str:
+    stem, dot, extension = name.rpartition(".")
+    base = stem if dot else name
+    normalized = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode()
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", normalized).strip("-").lower() or "archivo"
+    return f"{normalized}.{extension.lower()}" if dot else normalized
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+class Git:
+    def __init__(self, root: Path):
+        self.root = root
+
+    def __call__(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+        result = subprocess.run(["git", "-C", str(self.root), *args],
+                                capture_output=True, text=True)
+        if check and result.returncode != 0:
+            fail(f"git {' '.join(args[:2])}…: "
+                 f"{result.stderr.strip() or result.stdout.strip()}")
+        return result
+
+
+def parse_args(argv: list[str]) -> tuple[list[Path], bool, str]:
+    keep, remote, files, index = False, DEFAULT_REMOTE, [], 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--keep":
+            keep = True
+        elif arg == "--remote":
+            if index + 1 >= len(argv):
+                fail("--remote requiere un nombre")
+            remote = argv[index + 1]
+            index += 1
+        elif arg.startswith("--"):
+            fail(f"flag desconocida: {arg}")
+        else:
+            files.append(Path(arg))
+        index += 1
+    if not files:
+        fail("uso: ingest ARCHIVO... [--keep] [--remote NOMBRE]")
+    return files, keep, remote
+
+
+def copy_to_inbox(config, files: list[Path], keep: bool) -> tuple[list, list, list]:
+    inbox = config.inbox
+    inbox.mkdir(parents=True, exist_ok=True)
+    outcome = "conservado (--keep)" if keep else "borrado tras verificar remoto"
+    rows, pairs, names = [], [], []
+    for source in files:
+        if not source.is_file():
+            fail(f"{source}: no existe o no es archivo")
+        digest = sha256(source)
+        destination = inbox / sane_name(source.name)
+        if destination.exists():
+            if sha256(destination) != digest:
+                fail(f"{destination.name}: ya existe en el inbox con OTRO contenido — el "
+                     "inbox es inmutable; renombrá el archivo nuevo (p. ej. sufijo -v2) "
+                     "y reintentá")
+            print(f"{source.name}: ya ingerido idéntico como {destination.name}")
+        else:
+            shutil.copy2(source, destination)
+            print(f"{source.name} → {config.relative(destination)}")
+        names.append(destination.name)
+        pairs.append((source, digest))
+        rows.append(f"| {today()} | {destination.name} | {digest[:12]} "
+                    f"| {source.parent} | {outcome} |")
+    return rows, pairs, names
+
+
+def commit(git: Git, config, names: list[str]) -> None:
+    log = config.registry_file("ingest_log")
+    git("add", "--", *[str(config.relative(config.inbox / name)) for name in names],
+        config.relative(log))
+    if not git("diff", "--cached", "--name-only").stdout.strip():
+        print("nada nuevo que commitear (solo duplicados) — se verifica el remoto igual")
+        return
+    subject = f"feat: ingest — {', '.join(names)}"
+    if len(subject) > SUBJECT_LIMIT:
+        subject = subject[:SUBJECT_LIMIT - 1] + "…"
+    git("commit", "-m", subject)
+
+
+def push_and_verify(git: Git, remote: str) -> None:
+    """Gate de borrado: el remoto refleja HEAD. Si no, nada se borra."""
+    branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if git("push", remote, f"HEAD:{branch}", check=False).returncode != 0:
+        fail(f"push a `{remote}` falló — NADA se borra; resolvé el push y re-corré")
+    listed = git("ls-remote", remote, f"refs/heads/{branch}").stdout.split()
+    head = git("rev-parse", "HEAD").stdout.strip()
+    if not listed or listed[0] != head:
+        fail(f"el remoto ({listed[0][:12] if listed else 'vacío'}) no refleja HEAD "
+             f"({head[:12]}) — NADA se borra")
+    print(f"remoto verificado: {remote}/{branch} @ {head[:12]}")
+
+
+def delete_verified(pairs: list[tuple[Path, str]]) -> list[str]:
+    problems = []
+    for source, digest in pairs:
+        if not source.exists():
+            problems.append(f"{source}: ya no existe — no se borra nada por él")
+        elif sha256(source) != digest:
+            problems.append(f"{source}: cambió desde la copia (hash distinto) — NO se borra")
+        else:
+            source.unlink()
+            print(f"original borrado: {source}")
+    return problems
+
+
+def main() -> None:
+    config = kitconfig.load()
+    files, keep, remote = parse_args(sys.argv[1:])
+    log = config.registry_file("ingest_log")
+    if not log.exists():
+        fail(f"{config.relative(log)}: no existe — correr `kit-init`")
+
+    git = Git(config.root)
+    rows, pairs, names = copy_to_inbox(config, files, keep)
+    log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(rows) + "\n",
+                   encoding="utf-8")
+    commit(git, config, names)
+    push_and_verify(git, remote)
+
+    if keep:
+        print(f"{len(names)} archivo(s) ingeridos; originales conservados (--keep)")
+        return
+    problems = delete_verified(pairs)
+    if problems:
+        print("ingesta completa, pero con originales NO borrados:", file=sys.stderr)
+        for problem in problems:
+            print(f"  ✗ {problem}", file=sys.stderr)
+        sys.exit(1)
+    print(f"{len(names)} archivo(s): ingeridos, pusheados, verificados y originales borrados")
+
+
+if __name__ == "__main__":
+    main()

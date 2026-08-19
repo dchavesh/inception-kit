@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Close paso 1 — validación de formato del `01-report` vigente de una unidad.
+
+Chequeos mecánicos, sin juicio:
+  · las 7 secciones de la plantilla (`kitlib.report`)
+  · tabla de requisitos: columnas exactas, IDs `<unit>-reqNN`, sin celdas
+    vacías, madurez presente en Evidence
+  · tabla de fuentes: IDs `<unit>-srcNN`, calidad A–D, volatilidad, fecha
+  · afirmaciones (sección 2): madurez + volatilidad + fecha + `<unit>-srcNN`
+    en cada una; sin fuente solo se admite si es *especulativo* (por definición)
+
+`--lenient`: todo error baja a WARN y sale 0. Reservado para el retro-parse de
+corpus artesanal (flujo `/adopt`, Fase 3): un cierre normal jamás lo usa.
+
+Uso: validate-report UNIT_ID [--lenient]
+"""
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib import report as spec
+from kitlib import vocab
+from kitlib.errors import fail
+from kitlib.ids import find_unit_dir, is_valid_unit_id, latest_artifact, sub_id_pattern
+from kitlib.md import (list_items, parse_frontmatter, split_sections, table_rows)
+
+YEAR_RE = re.compile(r"\b20\d{2}\b")
+CLAIM_LABEL_WIDTH = 70
+
+
+def normalize_header(cell: str) -> str:
+    return re.sub(r"\s*\(.*?\)\s*", "", cell).strip()
+
+
+def check_requirements_table(section: str, config, unit_id: str, problems: list) -> None:
+    rows = table_rows(section)
+    if not rows:
+        problems.append(f"sección {spec.REQUIREMENTS_SECTION}: sin tabla de requisitos")
+        return
+    header = tuple(normalize_header(cell) for cell in rows[0])
+    if header != spec.REQ_COLUMNS:
+        problems.append(f"sección {spec.REQUIREMENTS_SECTION}: columnas {list(header)} "
+                        f"≠ {list(spec.REQ_COLUMNS)}")
+    pattern = re.compile(sub_id_pattern(config, "req", unit_id).pattern + "$")
+    seen: set = set()
+    for row in rows[1:]:
+        if len(row) != len(spec.REQ_COLUMNS):
+            problems.append(f"sección {spec.REQUIREMENTS_SECTION}: fila con {len(row)} "
+                            f"celdas: {row[:1]}")
+            continue
+        req_id = row[0]
+        if not pattern.match(req_id):
+            problems.append(f"sección {spec.REQUIREMENTS_SECTION}: ID fuera de "
+                            f"gramática: '{req_id}'")
+        if req_id in seen:
+            problems.append(f"sección {spec.REQUIREMENTS_SECTION}: ID duplicado: {req_id}")
+        seen = seen | {req_id}
+        empties = [spec.REQ_COLUMNS[i] for i, cell in enumerate(row) if not cell]
+        if empties:
+            problems.append(f"sección {spec.REQUIREMENTS_SECTION}: {req_id}: "
+                            f"celdas vacías {empties}")
+        elif not vocab.has_maturity(row[3]):
+            problems.append(f"sección {spec.REQUIREMENTS_SECTION}: {req_id}: "
+                            "Evidence sin nivel de madurez")
+
+
+def check_sources_table(section: str, config, unit_id: str, problems: list) -> None:
+    rows = table_rows(section)
+    if not rows:
+        problems.append(f"sección {spec.SOURCES_SECTION}: sin tabla de fuentes")
+        return
+    pattern = re.compile(sub_id_pattern(config, "src", unit_id).pattern + "$")
+    for row in rows[1:]:
+        if not row or not pattern.match(row[0]):
+            problems.append(f"sección {spec.SOURCES_SECTION}: ID de fuente fuera de "
+                            f"gramática: '{row[0] if row else ''}'")
+            continue
+        line = " | ".join(row)
+        if not re.search(rf"\b[{spec.QUALITY_GRADES}]\b", line):
+            problems.append(f"sección {spec.SOURCES_SECTION}: {row[0]}: sin calidad "
+                            f"{spec.QUALITY_GRADES[0]}–{spec.QUALITY_GRADES[-1]}")
+        if not vocab.has_volatility(line):
+            problems.append(f"sección {spec.SOURCES_SECTION}: {row[0]}: sin volatilidad")
+        if not YEAR_RE.search(line):
+            problems.append(f"sección {spec.SOURCES_SECTION}: {row[0]}: sin fecha")
+
+
+def check_claims(section: str, config, unit_id: str, problems: list) -> None:
+    claims = list_items(section)
+    if not claims:
+        problems.append(f"sección {spec.CLAIMS_SECTION}: sin afirmaciones en formato de lista")
+        return
+    src_pattern = sub_id_pattern(config, "src", unit_id)
+    for claim in claims:
+        low = claim.lower()
+        label = claim[:CLAIM_LABEL_WIDTH]
+        if not vocab.has_maturity(low):
+            problems.append(f"sección {spec.CLAIMS_SECTION}: sin madurez: «{label}…»")
+        if not vocab.has_volatility(low):
+            problems.append(f"sección {spec.CLAIMS_SECTION}: sin volatilidad: «{label}…»")
+        if not YEAR_RE.search(claim):
+            problems.append(f"sección {spec.CLAIMS_SECTION}: sin fecha: «{label}…»")
+        if not src_pattern.search(claim) and vocab.SPECULATIVE not in low:
+            problems.append(f"sección {spec.CLAIMS_SECTION}: sin `{unit_id}-srcNN` y no es "
+                            f"{vocab.SPECULATIVE}: «{label}…»")
+
+
+def collect_problems(config, unit_id: str) -> list[str]:
+    report = latest_artifact(find_unit_dir(config, unit_id), "01-report")
+    problems: list[str] = []
+    if not report.exists():
+        return [f"{config.relative(report)}: no existe"]
+
+    meta, body = parse_frontmatter(report.read_text(encoding="utf-8"))
+    for key in ("id", "unit", "date"):
+        if not meta.get(key):
+            problems.append(f"frontmatter: falta `{key}`")
+    sections = split_sections(body)
+    for number, keyword in spec.SECTION_KEYWORDS.items():
+        if number not in sections:
+            problems.append(f"falta la sección {number} ({keyword})")
+        elif keyword not in sections[number].splitlines()[0]:
+            problems.append(f"sección {number}: encabezado no menciona '{keyword}'")
+    if spec.CLAIMS_SECTION in sections:
+        check_claims(sections[spec.CLAIMS_SECTION], config, unit_id, problems)
+    if spec.SOURCES_SECTION in sections:
+        check_sources_table(sections[spec.SOURCES_SECTION], config, unit_id, problems)
+    if spec.REQUIREMENTS_SECTION in sections:
+        check_requirements_table(sections[spec.REQUIREMENTS_SECTION], config, unit_id, problems)
+    return problems
+
+
+def main() -> None:
+    config = kitconfig.load()
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+    lenient = "--lenient" in sys.argv
+    if len(args) != 1 or not is_valid_unit_id(config, args[0]):
+        fail("uso: validate-report UNIT_ID [--lenient]")
+    unit_id = args[0]
+
+    problems = collect_problems(config, unit_id)
+    tag = "WARN" if lenient else "ERROR"
+    for problem in problems:
+        print(f"{tag}: {unit_id}: {problem}")
+    if not problems:
+        print(f"{unit_id}: 01-report pasa la validación de formato.")
+    else:
+        print(f"\n{unit_id}: {len(problems)} problema(s) de formato"
+              + (" — modo lenient: anotado, no bloqueante." if lenient else "."))
+    sys.exit(0 if (lenient or not problems) else 1)
+
+
+if __name__ == "__main__":
+    main()

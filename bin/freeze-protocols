@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""`pending → frozen` para todos los protocols. GATE HUMANO.
+
+Solo se corre cuando el humano lo ordena, después de ratificar kill criteria,
+horizontes de caducidad y umbrales de QA. Sin `--confirm` solo lista qué
+congelaría y sale con error: la confirmación es la orden humana, no un default.
+
+Uso: freeze-protocols [--confirm] [UNIT_ID...]
+"""
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib.errors import fail
+from kitlib.ids import load_units
+
+PENDING_RE = re.compile(r"^status: pending$", re.M)
+
+
+def main() -> None:
+    config = kitconfig.load()
+    wanted = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+    units = load_units(config)
+    unknown = [unit_id for unit_id in wanted if unit_id not in units]
+    if unknown:
+        fail(f"unidad(es) inexistente(s): {', '.join(unknown)}")
+
+    pending = [unit for unit in units.values()
+               if unit.status == "pending" and (not wanted or unit.id in wanted)]
+    if not pending:
+        print("Nada en pending: no hay protocols para congelar.")
+        return
+
+    ids = ", ".join(unit.id for unit in pending)
+    if "--confirm" not in sys.argv:
+        print(f"Congelaría (pending → frozen): {ids}")
+        print("\nGATE HUMANO: correr `freeze-protocols --confirm` solo tras ratificar "
+              "kill criteria, horizontes y umbrales de QA.", file=sys.stderr)
+        sys.exit(1)
+
+    for unit in pending:
+        text = unit.path.read_text(encoding="utf-8")
+        frozen, count = PENDING_RE.subn("status: frozen", text, count=1)
+        if count != 1:
+            fail(f"{config.relative(unit.path)}: no encontré 'status: pending'")
+        unit.path.write_text(frozen, encoding="utf-8")
+        print(f"{unit.id}: pending → frozen")
+    print(f"\nCongelados: {len(pending)}. Ahora son records: el cuerpo es inmutable; "
+          "solo se sellan session/constitution/status al lanzar.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Regenera `registry/STATUS.md` desde los frontmatter de los protocols.
+
+Vista derivada: jamás se edita a mano. Ready (derivado, no almacenado): todos
+los `needs` de la unidad en `done`. Lanzable: ready y `frozen`. El orden de
+unidades es numérico (`r9` antes que `r10`), jamás lexicográfico.
+
+Uso: derive-status [--quiet]
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib.status import build_board
+
+
+def main() -> None:
+    config = kitconfig.load()
+    board = build_board(config)
+    out = config.registry_file("status")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(board, encoding="utf-8")
+    if "--quiet" not in sys.argv:
+        print(board)
+    print(f"[escrito: {config.relative(out)}]", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

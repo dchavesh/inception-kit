@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Deriva `review_by` = fecha + horizonte(volatilidad) por hallazgo. Lista vencidos.
+
+`review_by` jamás se almacena (spec §1.5). Horizontes: `framework.config.yaml`
+(`horizons`), jamás hardcodeados. Fecha del hallazgo: frontmatter `date` de su
+`02-findings` vigente. Volatilidad: la anotación entre paréntesis del hallazgo;
+si menciona más de una (p. ej. «baja–media»), rige la más volátil.
+
+Exit 0 sin vencidos; exit 1 con vencidos (lo consume el preflight de síntesis).
+
+Uso: derive-review-by
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib import vocab
+from kitlib.dates import add_months, today
+from kitlib.errors import fail
+from kitlib.ids import latest_artifact, unit_dirs
+from kitlib.md import numbered_findings, parse_frontmatter
+
+TITLE_WIDTH = 60
+
+
+def shortest_horizon(annotation: str, horizons: dict) -> int | None:
+    mentioned = vocab.mentioned_volatilities(annotation)
+    if not mentioned:
+        return None
+    return min(horizons[word] for word in mentioned)
+
+
+def scan_findings(path: Path, horizons: dict, now: str, relative: str) -> list[tuple]:
+    meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+    date = meta.get("date")
+    if not date:
+        fail(f"{relative}: frontmatter sin date — no puedo derivar review_by")
+    rows = []
+    for number, title, segment in numbered_findings(body):
+        horizon = None
+        for annotation in vocab.ANNOTATION_RE.findall(segment):
+            months = shortest_horizon(annotation, horizons)
+            if months is not None:
+                horizon = months if horizon is None else min(horizon, months)
+        if horizon is None:
+            rows.append((meta.get("unit", "?"), number, title, date, "sin etiqueta", "?"))
+            continue
+        review_by = add_months(str(date), horizon)
+        rows.append((meta.get("unit", "?"), number, title, date, review_by,
+                     "VENCIDO" if review_by < now else "vigente"))
+    return rows
+
+
+def main() -> None:
+    config = kitconfig.load()
+    horizons = config.horizons
+    now = today()
+    summary = " · ".join(f"{word} {horizons[word]}m" for word in horizons)
+    print(f"Horizontes (framework.config.yaml): {summary} · hoy: {now}\n")
+
+    rows = []
+    for unit_dir in unit_dirs(config):
+        findings = latest_artifact(unit_dir, "02-findings")
+        if findings.exists():
+            rows.extend(scan_findings(findings, horizons, now, config.relative(findings)))
+    if not rows:
+        print("Sin findings en el repo todavía.")
+        return
+
+    print("| Unidad | # | Hallazgo | Fecha | review_by | Estado |")
+    print("|---|---|---|---|---|---|")
+    for unit, number, title, date, review_by, state in rows:
+        print(f"| {unit} | {number} | {title[:TITLE_WIDTH]} | {date} | {review_by} | {state} |")
+
+    expired = [row for row in rows if row[5] == "VENCIDO"]
+    unlabeled = [row for row in rows if row[5] == "?"]
+    print(f"\nvencidos: {len(expired)} · sin etiqueta de volatilidad: {len(unlabeled)}")
+    if expired:
+        sys.stdout.flush()  # la tabla sale primero, aunque stdout esté redirigido
+        print("Vencido sin re-verificar ⇒ baja un nivel de madurez (spec §1.5): "
+              "se refresca o entra degradado — jamás lavado.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
