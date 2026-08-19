@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Guarda de inmutabilidad del inception-kit (spec §1.2).
+
+Se instala vía shim en la ruta efectiva de hooks (`core.hooksPath`) y vive
+vendorizado en `.inception-kit/hooks/` — versionado con el repo, sin depender
+del caché del plugin ni de Claude Code.
+
+Rechaza en el commit:
+  · modificar/borrar/renombrar records ya commiteados: `raw/`, `01-report`,
+    `02-findings`, `03-sources`, ADRs, `payload.md` sellado (`/launch` lo
+    commitea junto con el sello: commiteado ⇒ lanzado ⇒ record), el inbox y
+    las rutas extra que declare `records.extra_immutable_paths`
+  · tocar un protocol en `done`; en `frozen`/`running`/`qa` solo se permite
+    sellar frontmatter (status hacia adelante, session, constitution, runs,
+    mode) con cuerpo idéntico
+  · reescribir historia en los registries append-only
+  · modificar la constitution sin subir `version:` (enmienda ⇒ versión + changelog)
+
+Enmiendas = archivos nuevos, no ediciones. Agregar archivos siempre se permite.
+"""
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # el hook no ensucia el repo con __pycache__
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / ".inception-kit" / "lib"))
+
+from kitlib import config as kitconfig                       # noqa: E402
+from kitlib.config import STATUS_ORDER                       # noqa: E402
+from kitlib.registry import APPEND_ONLY                      # noqa: E402
+
+#: Campos que `/launch` puede sellar sobre un protocol ya congelado.
+SEALABLE_KEYS = {"status", "session", "constitution", "runs", "mode"}
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", "-C", str(REPO), *args],
+                          capture_output=True, text=True).stdout
+
+
+def head_exists() -> bool:
+    return subprocess.run(["git", "-C", str(REPO), "rev-parse", "--verify", "HEAD"],
+                          capture_output=True).returncode == 0
+
+
+def staged_changes() -> list[tuple[str, str]]:
+    changes = []
+    for line in git("diff", "--cached", "--name-status", "-M").splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        # En renames el path viejo es el que era record.
+        changes.append((parts[0][0], parts[1]))
+    return changes
+
+
+def record_patterns(config) -> tuple[str, ...]:
+    investigations = re.escape(config.data["paths"]["investigations"])
+    decisions = re.escape(config.data["paths"]["decisions"])
+    inbox = re.escape(config.data["paths"]["inbox"])
+    patterns = [
+        rf"^{investigations}/[^/]+/raw/",
+        rf"^{investigations}/[^/]+/0[123]-(?:report|findings|sources)(?:\.v\d+)?\.md$",
+        rf"^{investigations}/[^/]+/payload\.md$",
+        rf"^{decisions}/adr-.+\.md$",
+        rf"^{inbox}/",
+    ]
+    patterns.extend(rf"^{re.escape(str(extra).rstrip('/'))}(?:/|$)"
+                    for extra in config.extra_immutable_paths)
+    return tuple(patterns)
+
+
+def frontmatter_and_body(text: str) -> tuple[dict, str]:
+    match = re.match(r"\A---\n(.*?)\n---\n?", text, re.S)
+    if not match:
+        return {}, text
+    fields = {}
+    for line in match.group(1).splitlines():
+        key, _, value = line.partition(":")
+        fields[key.strip()] = value.strip()
+    return fields, text[match.end():]
+
+
+def check_protocol(path: str, errors: list) -> None:
+    head_fm, head_body = frontmatter_and_body(git("show", f"HEAD:{path}"))
+    new_fm, new_body = frontmatter_and_body(git("show", f":{path}"))
+    head_status = head_fm.get("status", "pending")
+    if head_status == "pending":
+        return  # aún no ratificado: editable
+    if head_status == "done":
+        errors.append(f"{path}: protocol en `done` — inmutable; enmienda = archivo nuevo")
+        return
+    if head_body != new_body:
+        errors.append(f"{path}: cuerpo de protocol {head_status} modificado — "
+                      f"solo se sella frontmatter ({', '.join(sorted(SEALABLE_KEYS))})")
+    changed = {key for key in set(head_fm) | set(new_fm)
+               if head_fm.get(key) != new_fm.get(key)}
+    illegal = changed - SEALABLE_KEYS
+    if illegal:
+        errors.append(f"{path}: campos no sellables modificados: {sorted(illegal)}")
+    new_status = new_fm.get("status", "")
+    if "status" in changed and (new_status not in STATUS_ORDER or
+                                STATUS_ORDER.index(new_status) < STATUS_ORDER.index(head_status)):
+        errors.append(f"{path}: transición de status inválida "
+                      f"{head_status} → {new_status or '?'} (solo hacia adelante)")
+
+
+def check_append_only(path: str, errors: list) -> None:
+    head = git("show", f"HEAD:{path}")
+    if not git("show", f":{path}").startswith(head.rstrip("\n")):
+        errors.append(f"{path}: record append-only — el contenido previo no se pisa")
+
+
+def check_constitution(path: str, errors: list) -> None:
+    head_fm, _ = frontmatter_and_body(git("show", f"HEAD:{path}"))
+    new_fm, _ = frontmatter_and_body(git("show", f":{path}"))
+    if head_fm.get("version") == new_fm.get("version"):
+        errors.append(f"{path}: enmienda sin subir `version:` — toda enmienda sube "
+                      "versión y anota changelog")
+
+
+def main() -> None:
+    if not head_exists():
+        return  # primer commit: nada commiteado ⇒ nada es record todavía
+    config = kitconfig.load(REPO)
+    records = record_patterns(config)
+    protocol_re = re.compile(
+        rf"^{re.escape(config.data['paths']['investigations'])}/[^/]+/00-protocol\.md$")
+    append_only = {config.relative(config.registry_file(name)) for name in APPEND_ONLY}
+    constitution = config.relative(config.constitution)
+
+    errors: list[str] = []
+    for status, path in staged_changes():
+        if status == "A":
+            continue
+        if any(re.search(pattern, path) for pattern in records):
+            errors.append(f"{path}: record inmutable — no se modifica/borra/renombra; "
+                          "enmienda = archivo nuevo")
+        elif protocol_re.search(path):
+            if status in ("D", "R"):
+                errors.append(f"{path}: protocol no se borra ni renombra")
+            else:
+                check_protocol(path, errors)
+        elif path in append_only:
+            if status in ("D", "R"):
+                errors.append(f"{path}: record append-only — no se borra")
+            else:
+                check_append_only(path, errors)
+        elif path == constitution and status == "M":
+            check_constitution(path, errors)
+
+    if errors:
+        print("pre-commit: guarda de inmutabilidad — commit rechazado\n", file=sys.stderr)
+        for error in errors:
+            print(f"  ✗ {error}", file=sys.stderr)
+        print("\nLos records no se editan (spec §1.2). Correcciones = enmiendas en "
+              "archivos nuevos.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

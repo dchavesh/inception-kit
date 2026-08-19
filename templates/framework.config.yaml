@@ -1,0 +1,90 @@
+# framework.config.yaml — el contrato de ESTE repo con el inception-kit.
+#
+# Un contrato, un lugar: rutas, gramática de IDs, contrato de corridas,
+# horizontes de caducidad y definiciones de métricas viven acá y en ningún otro
+# lado. Los scripts del kit y el hook de inmutabilidad lo leen; nadie hardcodea.
+#
+# Este archivo es además el ancla del repo: los scripts lo buscan subiendo desde
+# el directorio de trabajo. Si lo movés, el kit deja de encontrar el repo.
+#
+# Lo NO configurable, a propósito: el enum de madurez/volatilidad y la plantilla
+# del report son contrato de la spec, no decisión por proyecto — viven en el kit.
+
+# Versión del kit que sembró o migró este repo. La mantiene `kit-init`;
+# `doctor` avisa cuando el kit instalado es más nuevo (principio #7: sintonía
+# por migración). No la edites a mano.
+kit_version: 0.1.0
+
+# Rutas, relativas a la raíz del repo. Cambiarlas es legal; moverlas después
+# implica migrar el contenido y volver a correr `kit-init`.
+paths:
+  research: docs/research
+  investigations: docs/research/investigations
+  registry: docs/research/registry
+  decisions: docs/decisions
+  inbox: inbox
+  constitution: docs/research/constitution.md
+
+# Gramática de IDs: llave estable y "tonta" + slug. El significado vive en el
+# slug y en el índice, jamás dentro del ID.
+ids:
+  # Ancho MÍNIMO de la parte numérica (default 2 → r01). Al desbordar, el ancho
+  # crece (r99 → r100) y NADA se renumera. El orden es siempre numérico.
+  width: 2
+  # Set CERRADO de prefijos por clase de unidad: una letra minúscula cada uno.
+  # Agregar una clase es una decisión del proyecto, con entrada de glosario.
+  classes:
+    r: desk research
+    f: field work
+
+# Contrato de corridas por defecto, cuando el protocol de la unidad no declara
+# `runs:` / `mode:` en su frontmatter. Etiquetas: run-01..run-NN en ambos modos.
+#   independent — réplicas ciegas: cada run repite desde el protocol.
+#   chained     — partes deliberadas: una sola unidad epistémica.
+runs:
+  default: 2
+  default_mode: independent
+
+# Horizontes de caducidad por volatilidad, en meses. `review_by` se DERIVA
+# (fecha del record + horizonte), jamás se almacena. Vencido sin re-verificar
+# baja un nivel de madurez: se refresca o entra degradado, jamás lavado.
+horizons:
+  alta: 6
+  media: 18
+  baja: 36
+
+# Definiciones versionadas de métricas: cada columna es una flag de
+# `append-metrics` y una columna del record append-only `registry/metrics.md`.
+# `version` queda sellada en el encabezado de ese record: si cambiás las
+# columnas, subí la versión y migrá con `/migrate` — una serie append-only no
+# se reescribe bajo otra definición.
+#   kind: percent (0-100, admite los `tokens` declarados) | integer | text
+metrics:
+  version: 1
+  columns:
+    - key: claims-valid
+      label: "% afirmaciones con fuente válida"
+      kind: percent
+    - key: replication
+      label: "Tasa de replicación entre runs"
+      kind: percent
+      tokens: [n/a]
+    - key: echo-rate
+      label: "Tasa de eco"
+      kind: percent
+      tokens: [n/m]
+    - key: conflicts-open
+      label: "Contradicciones abiertas"
+      kind: integer
+    - key: cost
+      label: "Costo"
+      kind: text
+    - key: note
+      label: "Nota"
+      kind: text
+
+records:
+  # Rutas extra que el hook trata como record inmutable, además de las que la
+  # spec ya protege (raw/, reports, findings, sources, payloads, ADRs, inbox).
+  # Ejemplo: el bronze de un producto que vive en el mismo repo.
+  extra_immutable_paths: []

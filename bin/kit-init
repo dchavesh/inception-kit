@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Instala, actualiza y migra el inception-kit dentro de un repo. Idempotente.
+
+Es la ÚNICA costura por-repo, y hace tres cosas:
+
+  1. **Siembra** la estructura de un repo nuevo: `framework.config.yaml`, las
+     carpetas del framework y los registries con su encabezado (renderizados
+     desde la misma definición que usan los scripts — nadie copia un
+     encabezado a mano).
+  2. **Instala el hook de inmutabilidad**: vendoriza el hook y su librería en
+     `.inception-kit/` (versionados con el repo, sin depender del caché del
+     plugin) y escribe el shim en la RUTA EFECTIVA de hooks — la que dicta
+     `core.hooksPath`, jamás `.git/hooks` a ciegas. Un `pre-commit` ajeno
+     preexistente se conserva como `pre-commit.local` y sigue corriendo.
+  3. **Corre las migraciones** entre versiones del kit y deja rastro en el log
+     de migraciones del registry.
+
+Correrlo dos veces no cambia nada la segunda vez: reporta `ok` en todo.
+
+Uso: kit-init [--dry-run]
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import VERSION
+from kitlib import config as kitconfig
+from kitlib import migrations
+from kitlib import registry as reg
+from kitlib.config import CONFIG_NAME, REGISTRY_FILES
+from kitlib.dates import today
+from kitlib.errors import fail
+from kitlib.installation import HOOK_NAME, SHIM, Installation
+from kitlib.status import build_board
+
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+TEMPLATES = PLUGIN_ROOT / "templates"
+SEEDED_DIRS = ("research", "investigations", "registry", "decisions", "inbox")
+
+
+class Report:
+    """Acumula qué cambió: `kit-init` siempre dice exactamente qué tocó."""
+
+    def __init__(self, dry_run: bool):
+        self.dry_run = dry_run
+        self.changes: list[str] = []
+        self.unchanged: list[str] = []
+
+    def changed(self, message: str) -> None:
+        self.changes.append(message)
+        print(f"  {'[dry-run] ' if self.dry_run else ''}+ {message}")
+
+    def kept(self, message: str) -> None:
+        self.unchanged.append(message)
+
+
+def repo_root() -> Path:
+    result = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        fail("no estoy en un repo git — `kit-init` instala un hook, así que "
+             "necesita uno (`git init` primero)")
+    return Path(result.stdout.strip()).resolve()
+
+
+def write(path: Path, content: str, report: Report, label: str,
+          executable: bool = False) -> None:
+    if path.exists() and path.read_text(encoding="utf-8") == content:
+        report.kept(label)
+        return
+    verb = "actualizado" if path.exists() else "creado"
+    if not report.dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        if executable:
+            path.chmod(0o755)
+    report.changed(f"{label} ({verb})")
+
+
+def seed_config(root: Path, report: Report) -> None:
+    target = root / CONFIG_NAME
+    if target.exists():
+        report.kept(CONFIG_NAME)
+        return
+    write(target, (TEMPLATES / CONFIG_NAME).read_text(encoding="utf-8"), report, CONFIG_NAME)
+
+
+def seed_structure(config, report: Report) -> None:
+    for name in SEEDED_DIRS:
+        directory = config.path(name)
+        if directory.is_dir():
+            report.kept(f"{config.relative(directory)}/")
+            continue
+        if not report.dry_run:
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / ".gitkeep").touch()
+        report.changed(f"{config.relative(directory)}/ (creado)")
+
+    for name, seed in reg.SEEDS.items():
+        path = config.registry / REGISTRY_FILES[name]
+        if path.exists():
+            report.kept(config.relative(path))
+            continue
+        write(path, seed(config), report, config.relative(path))
+
+    # El tablero es vista derivada: acá solo se siembra si falta. De ahí en más
+    # lo regenera `derive-status` — jamás se edita a mano.
+    board = config.registry_file("status")
+    if board.exists():
+        report.kept(config.relative(board))
+    else:
+        write(board, build_board(config), report, config.relative(board))
+
+
+def vendor_kit(config, installation: Installation, report: Report) -> None:
+    """Copia librería y hook al repo: el hook corre sin Claude Code instalado."""
+    source_lib = PLUGIN_ROOT / "bin" / "kitlib"
+    target_lib = installation.vendored_lib / "kitlib"
+    for source in sorted(source_lib.glob("*.py")):
+        write(target_lib / source.name, source.read_text(encoding="utf-8"),
+              report, config.relative(target_lib / source.name))
+    stale = sorted(path.name for path in target_lib.glob("*.py")
+                   if not (source_lib / path.name).exists()) if target_lib.is_dir() else []
+    for name in stale:
+        if not report.dry_run:
+            (target_lib / name).unlink()
+        report.changed(f"{config.relative(target_lib / name)} (removido: ya no es del kit)")
+
+    write(installation.kit_dir / ".gitignore", "__pycache__/\n*.pyc\n", report,
+          config.relative(installation.kit_dir / ".gitignore"))
+    write(installation.vendored_hook,
+          (TEMPLATES / "hooks" / HOOK_NAME).read_text(encoding="utf-8"),
+          report, config.relative(installation.vendored_hook), executable=True)
+    write(installation.version_file, f"{VERSION}\n", report,
+          config.relative(installation.version_file))
+
+
+def install_shim(config, installation: Installation, report: Report) -> None:
+    hooks_dir = installation.hooks_dir()
+    shim = installation.shim_path()
+    label = f"{installation.hooks_dir_relative()}/{HOOK_NAME}"
+
+    if shim.exists() and shim.read_text(encoding="utf-8") == SHIM:
+        report.kept(label)
+        return
+    if shim.exists():
+        local = installation.local_hook_path()
+        if local.exists():
+            fail(f"{label}: hay un hook ajeno y {local.name} ya existe — resolvelo a "
+                 "mano (no piso hooks de nadie)")
+        if not report.dry_run:
+            shim.rename(local)
+            local.chmod(0o755)
+        report.changed(f"{label} ajeno conservado como {local.name} (el shim lo "
+                       "ejecuta primero)")
+    if not report.dry_run:
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        shim.write_text(SHIM, encoding="utf-8")
+        shim.chmod(0o755)
+    report.changed(f"{label} (shim instalado en la ruta efectiva de hooks)")
+
+
+def installed_version(config, installation: Installation) -> str | None:
+    """La versión ANTES de tocar nada — se lee antes de vendorizar, que la pisa."""
+    return installation.installed_version() or config.kit_version
+
+
+def run_migrations(config, installation: Installation, report: Report,
+                   installed: str | None) -> list:
+    steps = migrations.pending(installed, VERSION)
+    for step in steps:
+        print(f"  migración → {step.version}: {step.description}")
+        for line in step.apply(config, installation, report.dry_run):
+            report.changed(line)
+    if steps and not report.dry_run:
+        log_migration(config, installed, steps)
+    return steps
+
+
+def log_migration(config, installed: str | None, steps: list) -> None:
+    log = config.registry_file("migrations")
+    entry = [f"\n## {today()} — kit {installed} → {VERSION}\n"]
+    for step in steps:
+        entry.append(f"- **{step.version}** — {step.description}")
+    entry.append("- **Fuera de alcance, siempre:** el verbatim bronze (raw/, inbox/, "
+                 "payloads sellados) no se toca; los records de lectura se migran por "
+                 "supersesión mecánica vía `/migrate`, con opt-in humano.\n")
+    log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n"
+                   + "\n".join(entry) + "\n", encoding="utf-8")
+
+
+def stamp_version(config, report: Report) -> None:
+    path = config.root / CONFIG_NAME
+    text = path.read_text(encoding="utf-8")
+    updated = kitconfig.stamp_kit_version(text, VERSION)
+    if updated == text:
+        report.kept(f"{CONFIG_NAME} (kit_version: {VERSION})")
+        return
+    if not report.dry_run:
+        path.write_text(updated, encoding="utf-8")
+    report.changed(f"{CONFIG_NAME} (kit_version → {VERSION})")
+
+
+def next_steps(config) -> list[str]:
+    steps = []
+    if not config.constitution.exists():
+        steps.append(f"escribir y ratificar {config.relative(config.constitution)} "
+                     "(gate humano) — la constitution es neutral: la semilla del "
+                     "proyecto jamás entra a un payload")
+    if not any(config.investigations.glob("*/00-protocol.md")):
+        steps.append("diseñar el primer plan de unidades con `/inception-kit:plan`")
+    steps.append("verificar con `doctor`")
+    return steps
+
+
+def main() -> None:
+    dry_run = "--dry-run" in sys.argv
+    unknown = [arg for arg in sys.argv[1:] if arg != "--dry-run"]
+    if unknown:
+        fail(f"flag(s) desconocida(s): {', '.join(unknown)}\nuso: kit-init [--dry-run]")
+
+    root = repo_root()
+    report = Report(dry_run)
+    print(f"kit-init {VERSION} → {root}{' (dry-run)' if dry_run else ''}\n")
+
+    seed_config(root, report)
+    if not (root / CONFIG_NAME).exists():
+        # Solo posible en dry-run: sin config no hay contrato que leer.
+        print(f"\n[dry-run] {CONFIG_NAME} todavía no existe — correr sin --dry-run "
+              "para sembrar el repo.")
+        return
+
+    config = kitconfig.load(root)
+    installation = Installation(root)
+    previous = installed_version(config, installation)
+
+    seed_structure(config, report)
+    run_migrations(config, installation, report, previous)
+    vendor_kit(config, installation, report)
+    install_shim(config, installation, report)
+    stamp_version(config, report)
+
+    if not report.changes:
+        print("  todo en orden: nada que cambiar.")
+    print(f"\n{len(report.changes)} cambio(s) · {len(report.unchanged)} ya en su lugar.")
+    print("\nPróximos pasos:")
+    for step in next_steps(config):
+        print(f"  · {step}")
+
+
+if __name__ == "__main__":
+    main()
