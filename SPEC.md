@@ -2,7 +2,7 @@
 id: inception-framework-spec
 type: constitution
 version: 0.3
-status: proposed — pendiente de ratificación humana
+status: ratified — 2026-08-19 (gate humano: Sección A confirmada, Sección B aprobada completa)
 date: 2026-08-19
 supersedes: inception-framework-v0.2
 home: inception-kit (este repo)
@@ -378,8 +378,11 @@ en la prosa: la legislación de datos personales aplica al propio repo.
 - Vive en **su casa especial**: la ruta que declara `paths.hard_docs` (§5) o
   **fuera del repo** (Drive, SharePoint) cuando su tamaño o su licencia lo
   exijan.
-- Cuando vive fuera, el repo retiene **puntero + `sha256` + sidecar** en el
-  registry: la ausencia del binario nunca es ausencia de procedencia.
+- Cuando vive fuera, el repo retiene **puntero + `sha256` + sidecar**, y la fila
+  que los registra vive en el **ingest-log** (adjudicado en el gate de
+  ratificación, 2026-08-19: ya la escribía de facto vía `--keep`, tiene las
+  columnas de origen/hash/destino, y no se crea un registry nuevo para una sola
+  clase de fila): la ausencia del binario nunca es ausencia de procedencia.
 - Se identifica **al ingerir**, no después: es uno de los tres destinos
   obligatorios de la ingesta (§2.6). La ingesta conserva el original (`--keep`)
   en lugar de borrarlo.
@@ -430,7 +433,7 @@ nadie sabe quién lo mueve, y el material se sedimenta sin clase ni destino.
 |---|---|---|
 | **unidad** | el material pertenece a una unidad (el verbatim de un run, un binario recogido por esa unidad) | `<unit>/raw/` — `run-NN.md` para el verbatim de un run (§12, G3); cualquier otro bronze, con su sidecar al lado (§2.2) |
 | **clase sin unidad** | el material tiene clase de fuente (§2.1) pero no pertenece a ninguna unidad | `<research>/evidence/<class>/`, **con sidecar de procedencia obligatorio** |
-| **`hard-doc`** | documentación dura (§2.3) | su casa especial: `paths.hard_docs`, o fuera del repo con puntero + `sha256` + sidecar en el registry |
+| **`hard-doc`** | documentación dura (§2.3) | su casa especial: `paths.hard_docs`, o fuera del repo con puntero + `sha256` + sidecar registrados en el ingest-log (§2.3) |
 
 `<class>` es un valor del enum de §2.1, sin dialecto: la casa se llama como la
 clase, y no hay carpeta de sobrantes. **`evidence/misc/`, `varios/` y similares
@@ -1346,6 +1349,20 @@ lleva su ítem con alternativa descartada en el acta (Sección B.4).
 **Regla de auditoría del alcance:** todo párrafo normativo de v0.3 traza a la
 tabla §14.1, a la §14.2 o a la §14.3. Si algo no traza a ninguna, es scope creep
 y se borra.
+
+---
+
+### 14.4 Ratificación (2026-08-19)
+
+**Gate humano consumado el 2026-08-19:** Sección A del acta confirmada (A1–A14)
+y Sección B aprobada completa (B1–B32). Adjudicación tomada en el gate: la fila
+del puntero externo de un `hard-doc` vive en el **ingest-log** (§2.3, §2.6) —
+ya la escribía de facto, y no se crea un registry nuevo para una sola clase de
+fila. `status:` sube a **ratified**; desde este acto rige el protocolo duro de
+enmienda (§ "Cómo se lee y cómo se enmienda"): todo cambio posterior bumpea
+`version:` y pasa por gate. La activación del tooling (enums, ingesta con
+destino obligatorio, `language:`, enforcement de `context` y del bloque
+ratificado) llega con el **kit 0.2.0**, migrando junto — jamás a medias.
 
 ---
 
