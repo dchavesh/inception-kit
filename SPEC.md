@@ -35,12 +35,22 @@ sube `version:` y agrega su fila al changelog (§14), y la ratifica el humano.
 No hay corrección tipográfica exenta: si el texto normativo cambia, la versión
 cambia.
 
+**Enmienda antes del gate.** Ese protocolo duro gobierna una spec **en vigor**.
+Mientras el `status:` es `proposed`, el documento todavía es la propuesta que el
+acta somete a ratificación: una enmienda ratificada en conversación **antes** del
+gate entra a esta misma versión — no la bifurca ni la bumpea, porque no hay nada
+vigente que superar. A cambio, no entra en silencio: se redacta en su sección, se
+registra en la tabla de enmiendas pre-gate (§14.3) y se agrega como ítem con
+alternativa descartada al acta (Sección B.4). Ratificado el acta, la versión
+queda congelada y todo cambio posterior vuelve al protocolo duro.
+
 **Qué es v0.3.** Esta versión supersede a la v0.2 y la reemplaza como
 constitution vigente: es autocontenida, y ningún lector necesita la v0.2 para
 operar. Se construyó bajo una regla dura de alcance: **v0.3 = v0.2 arrastrada
-sin cambio + los 10 ítems de la Fase 2 del plan de mejoras vigente**. Todo
-párrafo normativo de este documento traza a uno de los dos orígenes; la tabla de
-trazabilidad de §14 lo hace auditable. Nada nació por iniciativa del redactor.
+sin cambio + los 10 ítems de la Fase 2 del plan de mejoras vigente + las
+enmiendas pre-gate ratificadas el 2026-08-19 (§14.3)**. Todo párrafo normativo de
+este documento traza a uno de los tres orígenes; las tablas de trazabilidad de
+§14 lo hacen auditable. Nada nació por iniciativa del redactor.
 
 **Estado.** `proposed`. Esta spec **no está en vigor** hasta que el humano
 ratifique el ACTA DE GATE del final. Las reglas que exigen migración de tooling
@@ -75,8 +85,10 @@ Dos listas gobiernan cosas distintas y por eso llevan nombres distintos
    carpeta. Sin carpetas genéricas top-level confundibles entre proyectos.
 6. **Nomenclatura en inglés.** Todo nombre de skill, comando, campo de contrato,
    operación, etiqueta y **valor de enum** va en inglés — kit, consumidores y
-   claude.ai. La prosa del corpus sigue siendo la del proyecto. Un solo idioma
-   para los nombres, cero híbridos.
+   claude.ai. La prosa del corpus sigue siendo la del proyecto: **el idioma de
+   prosa es un parámetro declarado** (`language`, §1.8), y las skills son una
+   sola versión que escribe en él — jamás copias traducidas. Un solo idioma para
+   los nombres, cero híbridos.
 7. **Sintonía por migración.** Cuando el framework mejora, un proyecto puede y
    debería migrar TODO a la versión vigente. La migración es **por capas** y
    jamás falsifica evidencia (§9).
@@ -275,6 +287,55 @@ etiqueta nuevos, y es un chequeo explícito de los flujos de planificación y de
 normalización. Un nombre que no pasa se cambia antes de existir; si ya existe y
 no pasa, el cambio entra por migración (§9), no por edición silenciosa.
 
+### 1.8 Idioma de prosa — un parámetro, no una bifurcación
+
+*Origen: enmienda pre-gate E3 (§14.3).* El principio de diseño #6 fija el idioma
+de los **nombres**; esta sección fija el de la **prosa**, y hace explícito lo que
+ya venía implícito ("la prosa del corpus sigue siendo la del proyecto").
+
+```yaml
+language: en        # código ISO 639-1
+```
+
+**La frontera es dura:**
+
+| Siempre en inglés, sin excepción | Se escribe en `language` |
+|---|---|
+| nombres de skill y de comando · campos de contrato y claves de config · valores de enum · etiquetas y marks · columnas de tabla · IDs y nombres de archivo | el cuerpo de protocols, reports, findings, sources y payloads · la constitution del proyecto y sus ADRs · la prosa de los registries · lo que las skills le dicen al humano |
+
+**Las skills tienen UNA sola versión.** Nombres y mecánica en inglés; la skill lee
+`language` y escribe su prosa en ese idioma. **Jamás existen copias traducidas**
+de una skill, una plantilla o un documento del kit: una copia por idioma es una
+segunda casa que deriva al primer cambio (principio de diseño #4). Lo mismo vale
+para el corpus — un repo tiene **un** idioma de prosa, no dos versiones del mismo
+documento.
+
+**Cambiar `language` es migración, no edición.** La clave es config operativa
+—no porta autoridad epistémica, así que no entra al bloque ratificado (§12,
+G4)—, pero cambiarla después del primer artefacto arrastra el mismo trabajo que
+mover una ruta: evergreen se actualiza, los derivados se regeneran, y los
+records **no se reescriben** (§9.1) — el corpus histórico se lee en el idioma en
+que se escribió, como cualquier otro legado.
+
+**Los renderizados para terceros son vistas derivadas.** Un PDF, un deck o un
+one-pager —traducido o no— se genera desde el artefacto vigente y **vive fuera
+del KB**: no es un documento del repo, no es citable como fuente, y no crea una
+segunda casa de nada (principio de operación #1).
+
+**El kit habla el idioma del kit.** `language` gobierna la prosa que las skills
+**escriben en el repo consumidor**; los artefactos propios del kit —esta spec,
+los `SKILL.md`, los comentarios de la config ancla— son documentos del kit y se
+redactan en el idioma del kit, con sus nombres en inglés como manda el principio
+#6.
+
+#### Regla de activación
+
+La spec **declara** el parámetro; el **kit 0.2.0** lo implementa (clave en la
+config ancla, skills que la leen al redactar), junto con el resto de su bump
+(§9.4). El kit trae **`en`** como valor de arranque y el flujo de creación de
+repo lo confirma con el humano: un repo cuyo equipo escribe en otro idioma lo
+declara ahí, una sola vez.
+
 ---
 
 ## 2. Clases de fuente de evidencia
@@ -314,12 +375,14 @@ en la prosa: la legislación de datos personales aplica al propio repo.
 
 - **Jamás se borra.** Es la única clase exenta del ciclo de vida de borrado de
   cualquier flujo (incluida la normalización de repos existentes).
-- Vive en **su casa especial**: una sección declarada del repo o **fuera de él**
-  (Drive, SharePoint) cuando su tamaño o su licencia lo exijan.
+- Vive en **su casa especial**: la ruta que declara `paths.hard_docs` (§5) o
+  **fuera del repo** (Drive, SharePoint) cuando su tamaño o su licencia lo
+  exijan.
 - Cuando vive fuera, el repo retiene **puntero + `sha256` + sidecar** en el
   registry: la ausencia del binario nunca es ausencia de procedencia.
-- Se identifica **al ingerir**, no después. La ingesta conserva el original
-  (`--keep`) en lugar de borrarlo.
+- Se identifica **al ingerir**, no después: es uno de los tres destinos
+  obligatorios de la ingesta (§2.6). La ingesta conserva el original (`--keep`)
+  en lugar de borrarlo.
 - No tiene obligación de silver ni de gold: es fuente de record. Toda afirmación
   derivada de ella recorre la cadena de evidencia normal.
 
@@ -344,6 +407,66 @@ Es la columna `Quality` de toda tabla de fuentes:
 **Regla cruzada:** una fuente más vieja que el horizonte de su volatilidad baja
 un grado. **Regla de eco:** las fuentes que repiten un mismo origen cuentan como
 una sola.
+
+### 2.6 Ingesta clasificada en la puerta
+
+*Origen: enmienda pre-gate E1 (§14.3). Generaliza la resolución de G3 (§12) a
+toda llegada, y elimina el `inbox/`.*
+
+**El único staging es externo al repo.** El material espera afuera — la carpeta
+de descargas del humano, el adjunto sin abrir, el export recién bajado — y el
+repo no tiene bandeja de entrada. **`inbox/` deja de existir**: no es una ruta
+del contrato, no es una casa, y ningún flujo escribe ahí.
+
+**Por qué no hay bandeja.** Toda llegada es atendida: no hay material que deba
+"esperar turno" dentro del repo. Una bandeja es una casa sin dueño, y una casa
+sin dueño reproduce exactamente el tramo huérfano que G3 reportó — algo entra,
+nadie sabe quién lo mueve, y el material se sedimenta sin clase ni destino.
+
+**La clasificación ocurre al ingerir**, no después. Toda ingesta declara
+**destino obligatorio**, y hay exactamente tres:
+
+| Destino | Cuándo aplica | Dónde aterriza |
+|---|---|---|
+| **unidad** | el material pertenece a una unidad (el verbatim de un run, un binario recogido por esa unidad) | `<unit>/raw/` — `run-NN.md` para el verbatim de un run (§12, G3); cualquier otro bronze, con su sidecar al lado (§2.2) |
+| **clase sin unidad** | el material tiene clase de fuente (§2.1) pero no pertenece a ninguna unidad | `<research>/evidence/<class>/`, **con sidecar de procedencia obligatorio** |
+| **`hard-doc`** | documentación dura (§2.3) | su casa especial: `paths.hard_docs`, o fuera del repo con puntero + `sha256` + sidecar en el registry |
+
+`<class>` es un valor del enum de §2.1, sin dialecto: la casa se llama como la
+clase, y no hay carpeta de sobrantes. **`evidence/misc/`, `varios/` y similares
+están prohibidos** (principio de diseño #5, §5).
+
+**Ante ambigüedad, la ingesta pregunta y no avanza.** Si el destino no está
+determinado — no se sabe la unidad, no se sabe la clase, o el mismo archivo
+podría ser `document-drop` o `hard-doc` — la operación **se detiene y pregunta al
+humano**. Nunca elige por defecto: adivinar la casa es el drift que esta sección
+existe para impedir (principio de diseño #2 y principio de operación #1).
+
+**El desenlace del original no cambia.** Copia al destino → fila en el log de
+ingesta → commit → push → **verificación contra el remoto** (la rama remota debe
+ser HEAD: dos copias independientes) → recién entonces se borra el original,
+archivo por archivo re-verificado por hash. Si el push o la verificación fallan,
+**nada se borra**. `--keep` conserva el original cuando debe seguir viviendo
+afuera (el caso normal de `hard-doc`). Así el staging externo se vacía **solo**
+tras ingesta verificada.
+
+**El ingest-log queda idéntico.** Una fila por archivo — fecha, archivo,
+`sha256`, origen externo, desenlace del original — y la fila es la misma
+cualquiera sea el destino; la columna de archivo nombra ahora la ruta destino
+real en vez de un nombre dentro de la bandeja. El régimen sigue siendo
+append-only (§12, G6).
+
+**Legado.** Los `inbox/` de proyectos que adopten el framework son **legado
+congelado**: bronze que se lee y se cita, jamás se reescribe (§9.1), y donde no
+nace nada nuevo. Reconciliarlos con las casas reales es trabajo de `/migrate`,
+con el rastro doble de §9.2 y sin tocar un byte del verbatim.
+
+#### Regla de activación
+
+La spec **norma** el destino obligatorio y la desaparición del `inbox`; el
+**kit 0.2.0** lo implementa junto con el resto de su bump (§9.4): destino en la
+operación de ingesta, `paths` sin `inbox` y con `evidence`/`hard_docs`, y la
+guarda apuntada a las casas reales (§4.4).
 
 ---
 
@@ -444,13 +567,87 @@ cuyo cambio no es libre.
 
 El enforcement por clase **SE SUMA** al enforcement por rutas de la guarda de
 integridad, no lo reemplaza. La guarda por rutas es el backstop: protege
-`raw/`, reports, findings, sources, payloads sellados, ADRs, el inbox y las
-rutas extra que declare el proyecto, aunque un frontmatter mienta o falte.
+`raw/`, reports, findings, sources, payloads sellados, ADRs, **las casas de
+bronze sin unidad (`<research>/evidence/<class>/`) y la casa de `hard-doc`**, y
+las rutas extra que declare el proyecto, aunque un frontmatter mienta o falte.
+
+**La protección sigue a las casas reales, no a una bandeja** (§2.6): con el
+`inbox` fuera del contrato, lo que la guarda protegía en él lo protege ahora en
+el destino donde el material aterriza. Un `inbox/` legado sigue protegido
+mientras exista, como el bronze que es (§9.1).
 
 **La guarda de integridad corre sin dependencias de terceros** — git y Python
 estándar bastan, sin el kit de skills instalado y sin paquetes externos. El
 subconjunto YAML que consumen la config y los frontmatter es, por contrato,
 **escalares y listas inline**: nada que exija un parser completo.
+
+### 4.5 Roster de archivos repo-level
+
+*Origen: enmienda pre-gate E2 (§14.3).* §5 cierra las **carpetas** del repo;
+esta tabla cierra sus **archivos de nivel repo**. Es el set completo de lo que el
+framework reconoce fuera de la carpeta de una unidad: cada fila declara rol,
+lector, momento de lectura y clase (§4.1), como exige la regla chat-primero
+(§4.2) a cualquier archivo.
+
+| Archivo | Rol | Lector | Momento de lectura | Clase |
+|---|---|---|---|---|
+| `README.md` (raíz) | qué es este repo y dónde está cada cosa | humano o agente que aterriza por primera vez | al abrir el repo | evergreen — **puntero delgado** |
+| `CLAUDE.md` (raíz) | cómo se opera este repo: qué skills existen, qué está prohibido, dónde están las reglas | sesión de agente | al iniciar toda sesión | evergreen — **puntero delgado** |
+| `framework.config.yaml` (raíz) | el contrato de este repo con el kit y su **ancla** (rutas, `ids`, `runs`, `horizons`, `metrics`, `context`, `language`, `kit_version`) | scripts del kit y guarda de integridad | en cada corrida de tooling | evergreen; su **bloque ratificado** cambia solo por enmienda (§12, G4) |
+| `<research>/constitution.md` | gobernanza del repo: supuestos refutables, dominio, techo de gasto, umbrales de QA, disparadores | humano en los gates; el coordinador al comisionar | antes de todo gate y de congelar unidades | evergreen **clase constitution** (§4.3) |
+| `<registry>/*.md` | la memoria del programa: los ocho registries que son record (metrics, ingest-log, supersessions, migrations, qa-audits, gates, requirements, conflicts) | coordinador, síntesis, auditoría | al cerrar, citar o auditar | **según §12, G6** — append-only o marcable |
+| `<registry>/STATUS.md` | tablero de estado del programa; el noveno registry y el único que no es record | humano y coordinador | al planificar y al lanzar | **vista derivada** — regenerable, jamás editada a mano, jamás autoritativa (§12, G6) |
+| índice puerta-de-entrada | `id → slug → objetivo en una línea → status` (§1.2) | quien necesita saber sin abrir cada unidad | al orientarse en el corpus | **vista derivada generada** — la genera el kit; hoy no existe (preguntas al final, #1) |
+| `SPEC.md` (en el kit) | esta spec: la constitution del framework | toda sesión, humano o script que opere bajo el framework | antes de crear, cerrar o migrar cualquier artefacto | evergreen **clase constitution**; **vive en el kit y en ningún repo consumidor** — un repo la referencia por la versión de kit que declara su config |
+
+Los archivos de una unidad (`00-protocol`, `payload`, `raw/`, `01-report`,
+`02-findings`, `03-sources`) no son repo-level: los norma §5, y por diseño viven
+dentro de la carpeta de su unidad (principio de diseño #5).
+
+Tampoco entra el **tooling que el kit instala** —las skills vendorizadas, el hook
+de integridad y su shim—: es maquinaria versionada por el kit, no conocimiento
+del repo. No aloja reglas, se reemplaza en cada bump, y por eso ni ocupa fila ni
+abre la taxonomía.
+
+Como esos artefactos de nombre fijo, **los del roster no declaran `class:` en su
+frontmatter**: su clase la fija esta tabla y su consumidor es el framework (§4.2).
+La constitution del proyecto es la excepción esperable — declara lo que exige su
+protocolo de enmienda (`version:`, changelog), no su clase.
+
+**Taxonomía cerrada.** La tabla es el set completo. **Un archivo repo-level
+nuevo exige enmienda de esta spec** — con su fila declarada, como los prefijos de
+unidad exigen entrada de config y de glosario (§1.3). Un archivo repo-level que
+no esté en la tabla no es "una excepción": es una violación que el flujo de
+normalización trata como tal.
+
+**Regla de entrada: el conocimiento vive UNA vez.** Los archivos de entrada
+(`README.md`, `CLAUDE.md`, el índice) son **punteros delgados o vistas
+generadas** — jamás segundas casas de una regla. Apuntan a donde la regla vive
+(esta spec, la constitution, la config) y no la repiten, ni siquiera "resumida":
+un resumen es una copia que deriva en silencio (principio de diseño #4,
+principio de operación #1).
+
+*Prueba:* si se borra un archivo de entrada, **no se pierde ninguna regla** —
+solo el atajo para encontrarla. Un archivo de entrada que no pasa la prueba está
+albergando conocimiento que le pertenece a otra casa, y se corrige moviéndolo,
+no duplicándolo.
+
+**Dos constancias que esta tabla deja por escrito:**
+
+- **`briefing.md` no existe como archivo.** El briefing es la Parte II del
+  documento de plan que comisiona las unidades, y el protocol lo apunta con
+  `plan:` (§12, G1). No hay, ni habrá, un briefing top-level.
+- **`AGENTS.md` no es parte del framework.** Ninguna fila lo declara y ninguna
+  regla vive ahí. Si un harness externo lo exige, se **genera** desde la misma
+  fuente que `CLAUDE.md` — nunca se redacta aparte, porque un segundo archivo de
+  instrucciones escrito a mano es exactamente la segunda casa que la regla de
+  entrada prohíbe.
+
+#### Regla de activación
+
+La spec **norma** el roster; verificarlo (archivo repo-level fuera de la tabla,
+archivo de entrada engordado a segunda casa) es trabajo del chequeo de integridad
+del **kit 0.2.0**, junto con el resto de su bump (§9.4).
 
 ---
 
@@ -496,7 +693,11 @@ Los reports y findings llevan frontmatter mínimo: `id`, `unit`, `date`.
   `payloads/`, `docs-varios/` o similar.
 
 **Rutas del repo.** Las declara `framework.config.yaml` (`paths`), y solo ahí:
-`research`, `investigations`, `registry`, `decisions`, `inbox`, `constitution`.
+`research`, `investigations`, `registry`, `decisions`, `evidence`, `hard_docs`,
+`constitution`. **`inbox` ya no es una de ellas** (§2.6): `evidence` es la casa
+del bronze con clase pero sin unidad, y `hard_docs` la casa especial de la
+documentación dura (§2.3). Los **archivos** de nivel repo los cierra §4.5, igual
+que estas rutas cierran las carpetas.
 
 **Statuses de una unidad:** `pending → frozen → running → qa → done`, solo hacia
 adelante. `pending` es lo único con cuerpo editable; desde `frozen` el cuerpo del
@@ -715,7 +916,7 @@ implica trabajo extra, se hace.
 | **evergreen** | se actualiza **in-place** | revisión normal |
 | **derivados** (tablero, `review_by`, vistas, índices) | se **regeneran** | regenerar y comparar |
 | **records de lectura** (findings vigentes, reports) | **supersesión mecánica**: relabel por script, motivo declarado `migración a <versión>` | **el diff es la evidencia**; round-trip cuando el pase es puramente mecánico |
-| **verbatim bronze** (`raw/`, inbox, payloads sellados) | **JAMÁS se reescribe** | se lee con glosario (§13.2) |
+| **verbatim bronze** (`raw/`, `evidence/`, la casa de `hard-doc`, payloads sellados, y los `inbox/` legados) | **JAMÁS se reescribe** | se lee con glosario (§13.2) |
 
 **Por qué el verbatim es intocable:** es el rastro de auditoría. Un byte añadido
 rompe la cadena `sha256` que hace auditable cada afirmación que lo cita.
@@ -723,6 +924,12 @@ rompe la cadena `sha256` que hace auditable cada afirmación que lo cita.
 **Opt-in humano.** El pase de supersesión mecánica sobre records de lectura se
 ofrece con el diff a la vista; el humano decide. Una migración jamás produce
 supersesiones vacías: un record ya canónico no se supersede "por consistencia".
+
+**Reubicar no es reescribir.** Llevar un `inbox/` legado a las casas reales
+(§2.6) mueve archivos sin tocar su contenido: el `sha256` de cada uno sigue
+siendo el mismo — que es justamente lo que hace verificable el pase. Es opt-in
+del humano como cualquier otro, deja el rastro doble de §9.2, y **no habilita
+ninguna edición del verbatim**.
 
 ### 9.2 Rastro obligatorio
 
@@ -798,7 +1005,9 @@ laguna G3 las tocan.*
    `needs`, kill criteria) y el **briefing** del programa como Parte II del plan
    (§12, G1). **Gate: el humano ratifica — acá es donde el juicio humano se gana
    el sueldo.**
-4. Scaffold + freeze: scripteado, determinista, aburrido a propósito.
+4. Scaffold + freeze: scripteado, determinista, aburrido a propósito. El
+   scaffold siembra la config del repo — incluido su `language` (§1.8),
+   confirmado con el humano, no adivinado.
 
 **`/launch rNN`** — cuando una unidad está ready.
 
@@ -808,7 +1017,7 @@ y commitear el payload como record** → correr los N runs del contrato (§3) �
 antes de cerrar el chat, pedir **ahí mismo** el report en plantilla, el borrador
 de findings y la bitácora (esa sesión tiene el contexto completo: es el mejor
 lugar para destilar) → los exports verbatim aterrizan directo en
-`raw/run-NN.md` (§12, G3).
+`raw/run-NN.md`, por ingesta con destino declarado (§2.6; §12, G3).
 
 **`/close rNN`** — el gate de QA y todo lo que sigue. Los pasos 1–3 son el
 status `qa`.
@@ -937,17 +1146,24 @@ Hasta entonces la fila de contrato es deuda declarada, no una regla incumplida.
 **Decisión.** **Nadie lo mueve: el verbatim de un run aterriza directo en la
 carpeta de su unidad.** La operación de ingesta acepta destino de unidad y run
 (`--unit <UNIT_ID> --run <N>`) y escribe en `<unit>/raw/run-NN.md`, registrando
-la fila de procedencia igual que cualquier ingesta. El inbox deja de ser
-estación de paso de exports de run; sigue siendo la casa de todo lo demás
-(documentos recibidos, documentación dura, material no ligado a un run).
-`/close` **solo verifica** que existan los N raws del contrato: no mueve nada.
+la fila de procedencia igual que cualquier ingesta. `/close` **solo verifica**
+que existan los N raws del contrato: no mueve nada.
 
-**Por qué esta y no la alternativa.** La alternativa —que `/close` mueva desde
-el inbox— es **estructuralmente imposible sin debilitar la guarda de
-integridad**: el inbox es record inmutable, y la guarda rechaza mover, renombrar
-o borrar cualquier ruta del inbox. Asignar el paso al mover exigiría una
-excepción en la guarda; asignarlo a la ingesta no exige ninguna. Además cumple
-colocación por unidad (principio de diseño #5).
+**Generalizada por la enmienda E1 (§2.6): no hay tramo, porque no hay bandeja.**
+La resolución original dejaba el inbox vivo "para todo lo demás"; esa mitad
+**muere**. El destino es obligatorio para toda ingesta y solo puede ser uno de
+tres —unidad, clase sin unidad (`<research>/evidence/<class>/`) o `hard-doc`—, y
+ante ambigüedad la ingesta pregunta y no avanza. `inbox` sale de `paths` y de la
+guarda; la protección de rutas pasa a las casas reales (§4.4, §5).
+
+**Por qué esta y no las alternativas.** Que `/close` mueva desde el inbox es
+**estructuralmente imposible sin debilitar la guarda de integridad**: el inbox
+era record inmutable, y la guarda rechaza mover, renombrar o borrar esas rutas.
+Asignar el paso al mover exigiría una excepción en la guarda; asignarlo a la
+ingesta no exige ninguna. Y conservar el inbox como casa de lo que no es un run
+sostenía una segunda estación sin dueño para material que **igual** hay que
+clasificar: si toda llegada es atendida, clasificar al ingerir cuesta lo mismo y
+cumple colocación por unidad (principio de diseño #5) desde el primer segundo.
 
 ### G4 — Dónde viven los horizontes de caducidad
 
@@ -960,8 +1176,9 @@ colocación por unidad (principio de diseño #5).
   ratificado** de la config, junto con `runs`, `ids`, `metrics` y `context`.
   Cambiar cualquier clave del bloque ratificado es una **enmienda**: exige subir
   `version:` de la constitution en el mismo commit y anotar su changelog. El
-  resto de la config (`paths`, `kit_version`, rutas inmutables extra) es
-  operativo y no exige enmienda.
+  resto de la config (`paths`, `language`, `kit_version`, rutas inmutables
+  extra) es operativo y no exige enmienda — lo que no significa gratis: mover una
+  ruta o cambiar `language` arrastra migración (§1.8, §9).
 - **Los disparadores del proyecto viven en la constitution** (§6.3): son reglas
   ratificadas, no números, y no tienen representación en la config.
 
@@ -1039,6 +1256,8 @@ declara; no lo implementa.*
 | **supersession** | operación por la que un record queda superado por otro, con puntero y sin borrarse |
 | **clean-room** | postura de contexto donde solo viaja el protocol |
 | **acta** | lote de gates presentado para que el humano lo resuelva de una sola lectura |
+| **evidence** | la casa del bronze que tiene clase de fuente pero no pertenece a ninguna unidad: `<research>/evidence/<class>/` |
+| **language** | el idioma de prosa del repo, declarado en la config; los nombres del framework siguen en inglés (§1.8) |
 
 ### 13.2 Vocabulario histórico — contrato de lectura del corpus viejo
 
@@ -1059,6 +1278,7 @@ aplica al verbatim.
 | `alta / media / baja` | enum de volatilidad en español | `high / medium / low` |
 | `<unit>-v2-srcNN` | espacio de fuentes de un record superado | **vigente** — es el namespace de supersesión (§7.2) |
 | "Bloque Común" | el bloque común del payload | **briefing** |
+| `inbox/` | la bandeja de entrada dentro del repo (v0.2 y kit 0.1.x) | **no existe**: el staging es externo y la ingesta clasifica en la puerta (§2.6). Los `inbox/` de repos adoptados son bronze congelado que `/migrate` reconcilia |
 
 ### 13.3 Legado español → estándar
 
@@ -1107,12 +1327,25 @@ autocontenida y ningún lector necesita abrir la v0.2.
 | Rúbrica de calidad de fuente A–D, regla cruzada y regla de eco | §2.5 | ninguna |
 | Estándar de artefactos y sus regímenes | §5 | se agrega `payload.md` como record sellado |
 | Modelo de ejecución (readiness, canary, sesión, escritor único) | §10.1 | el encadenamiento pasa de nota a `mode: chained` (§3.2) |
-| Pipelines `/inception`, `/launch`, `/close`, `/synthesis` | §10.2 | horizontes salen de la constitution (G4); briefing reemplaza a la constitution en el payload (G1); los raws aterrizan directo (G3) |
+| Pipelines `/inception`, `/launch`, `/close`, `/synthesis` | §10.2 | horizontes salen de la constitution (G4); briefing reemplaza a la constitution en el payload (G1); los raws aterrizan directo (G3) y toda ingesta clasifica en la puerta (§2.6) |
 | Gates como datos, y su tabla | §11.1 | se agrega el gate de enmienda del bloque ratificado; todo gate deja fila en el registry de gates |
 | Modo continuo declarado fuera de alcance | §11.3 | ninguna |
 
+### 14.3 Enmiendas pre-gate (2026-08-19)
+
+Ratificadas en conversación **antes** del gate y por eso integradas a esta misma
+versión, sin bump (§"Cómo se lee y cómo se enmienda este documento"). Cada una
+lleva su ítem con alternativa descartada en el acta (Sección B.4).
+
+| Δ | Enmienda | Qué cambia | Secciones tocadas | Ítems del acta |
+|---|---|---|---|---|
+| Δ11 | **E1 — ingesta clasificada en la puerta; el `inbox` desaparece** | el único staging es externo al repo; toda ingesta declara **destino obligatorio** (unidad · clase sin unidad en `evidence/<class>/` · `hard-doc`) y pregunta ante ambigüedad; `inbox` sale de `paths` y de la guarda, que pasa a proteger las casas reales; el ingest-log queda idéntico; los `inbox/` legados son bronze congelado que `/migrate` reconcilia | §2.3, **§2.6 (nueva)**, §4.4, §5, §9.1, §10.2, §12 G3, §13.2 | B3 (ajustado), B24–B26 |
+| Δ12 | **E2 — roster normativo de archivos repo-level** | tabla cerrada de todo archivo de nivel repo con rol, lector, momento de lectura y clase; archivo nuevo = enmienda de spec; regla de entrada (punteros delgados o vistas generadas, jamás segundas casas); constancias de `briefing.md` y `AGENTS.md` | **§4.5 (nueva)**, §5 | B27–B29 |
+| Δ13 | **E3 — idioma de prosa como parámetro** | `language:` en la config; el framework sigue en inglés (nombres, enums, campos) y la prosa se escribe en el idioma declarado; una sola versión de cada skill, jamás copias traducidas; cambiar el idioma es migración; los renders para terceros son vistas derivadas fuera del KB | §0.1 #6, **§1.8 (nueva)**, §10.2, §12 G4, §13.1 | B30–B32 |
+
 **Regla de auditoría del alcance:** todo párrafo normativo de v0.3 traza a la
-tabla 12.1 o a 12.2. Si algo no traza a ninguna, es scope creep y se borra.
+tabla §14.1, a la §14.2 o a la §14.3. Si algo no traza a ninguna, es scope creep
+y se borra.
 
 ---
 
@@ -1122,6 +1355,12 @@ tabla 12.1 o a 12.2. Si algo no traza a ninguna, es scope creep y se borra.
 cada ítem trae qué se decide, la resolución propuesta y la alternativa
 descartada. Ratificar el acta ratifica la spec; rechazar un ítem obliga a
 enmendar la sección que lo implementa antes de subir `status:` a ratificada.*
+
+*Actualizada el **2026-08-19** con las tres enmiendas pre-gate ratificadas en
+conversación (§14.3): entran como **Sección B.4, ítems B24–B32**, y **B3 queda
+ajustado** por la primera de ellas. No bumpean `version:` porque la spec aún no
+está en vigor — se ratifican en este mismo acto, con el mismo estándar que todo
+lo demás: resolución propuesta + alternativa descartada.*
 
 ## Sección A — Consolidación (ya pre-ratificado; solo confirmar)
 
@@ -1155,7 +1394,7 @@ Cada ítem: **decisión → resolución propuesta → alternativa descartada.**
 |---|---|---|---|
 | B1 | **G1 — casa del briefing.** ¿`plan:` es contrato o hace falta otro mecanismo? | **`plan:` ratificado como contrato**: el briefing es la Parte II del plan que comisiona la unidad; `/launch` lo resuelve por ese puntero y pregunta si falta (§12 G1) | Un `briefing.md` genérico top-level — un repo corre varios programas con briefings distintos: sería mentira o derivaría |
 | B2 | **G2 — mecanismo de `context`.** | **Definido en §8**: campo en protocol, default en config (`scoped`), composición de payload por postura, tres guardas. Implementa el kit 0.2.0 | Dejar la fila como deuda sin mecanismo — perpetúa un campo que nadie sabe honrar |
-| B3 | **G3 — dueño del tramo `inbox/` → `raw/`.** | **La ingesta aterriza directo**: `--unit <UNIT_ID> --run <N>` escribe en `<unit>/raw/run-NN.md`; `/close` solo verifica (§12 G3) | Que `/close` mueva desde el inbox — el inbox es record inmutable y la guarda rechaza mover/renombrar: exigiría debilitarla |
+| B3 | **G3 — dueño del tramo `inbox/` → `raw/`.** *(ajustado por E1: ver B24)* | **La ingesta aterriza directo**: `--unit <UNIT_ID> --run <N>` escribe en `<unit>/raw/run-NN.md`; `/close` solo verifica (§12 G3). La otra mitad de la resolución original —"el inbox sigue siendo la casa de todo lo demás"— **queda derogada por B24**: no hay tramo porque no hay bandeja | Que `/close` mueva desde el inbox — el inbox es record inmutable y la guarda rechaza mover/renombrar: exigiría debilitarla |
 | B4 | **G4 — casa de los horizontes.** | **Valor en la config** (`horizons`, casa única); **autoridad en la constitution** vía **bloque ratificado** (`horizons`, `runs`, `ids`, `metrics`, `context`): cambiarlo exige enmienda con bump; los **disparadores** del proyecto siguen en la constitution (§12 G4) | (a) Solo constitution — el tooling leería de dos lados; (b) solo config — dejaría un número epistémico editable sin gate humano |
 | B5 | **G5 — ancho de sub-IDs.** | **Ratificado: un solo `ids.width` gobierna todo**, con `adr-NNNN` como única excepción documentada (convención MADR) (§12 G5) | Ancho independiente por tipo de sub-ID — perilla por proyecto que nadie necesita |
 | B6 | **G6 — registries append-only.** | **Tabla normativa de 9 registries** con tres regímenes: append-only (6), marcable (2), vista derivada (1) (§12 G6) | Dejarlo a la convención de cada encabezado — es exactamente el vacío que la laguna reporta |
@@ -1185,7 +1424,36 @@ Cada ítem: **decisión → resolución propuesta → alternativa descartada.**
 | B20 | **`clean-room` exige `needs: []`** | Una unidad que necesita findings ajenos no es sala limpia; la secuenciación no es un `need` (§8.3) | Permitir `needs` cuyos findings no viajen — `needs` significaría dos cosas según el contexto |
 | B21 | **`gates.md` como registry nuevo** | Lo exige la retro #11 ("registro de qué gate se consumió cuándo"), hoy disperso en CLAUDE.md y changelogs (§7.4, §12 G6) | Seguir sin registro — el rastro disperso es el síntoma reportado |
 | B22 | **`adr-NNNN` mantiene ancho 4** fuera de `ids.width` | Única excepción documentada, por convención MADR externa (§1.5) | Forzar `adr-NN` bajo `ids.width` — rompería la convención MADR con la que interopera |
-| B23 | **Alcance de v0.3 = v0.2 arrastrada + los 10 ítems** | La spec es autocontenida y toda regla traza a §14.1 o §14.2 | Redactar v0.3 como delta sobre v0.2 — no sería una constitution: obligaría a leer dos documentos |
+| B23 | **Alcance de v0.3 = v0.2 arrastrada + los 10 ítems** *(ampliado por las enmiendas pre-gate: ver §14.3)* | La spec es autocontenida y toda regla traza a §14.1, §14.2 o §14.3 | Redactar v0.3 como delta sobre v0.2 — no sería una constitution: obligaría a leer dos documentos |
+
+### B.4 — Enmiendas pre-gate ratificadas en conversación (2026-08-19)
+
+Tres enmiendas entraron **antes** de este gate, a la misma versión y con el mismo
+estándar de acta. Se agrupan por enmienda; §14.3 las traza a las secciones.
+
+**E1 — Ingesta clasificada en la puerta; el inbox desaparece.**
+
+| # | Decisión | Resolución propuesta | Alternativa descartada |
+|---|---|---|---|
+| B24 | **¿Existe una bandeja de entrada dentro del repo?** | **No.** El único staging es **externo** (la carpeta de descargas del humano) y se vacía solo tras ingesta verificada contra el remoto; `inbox/` deja de existir como ruta, como casa y como concepto (§2.6) | Conservar el inbox "para todo lo que no es un run" — es una casa sin dueño que reproduce el tramo huérfano que G3 reportó: toda llegada es atendida, así que nada tiene por qué esperar adentro |
+| B25 | **¿Qué exige la ingesta al recibir material?** | **Destino obligatorio, tres formas:** unidad (`<unit>/raw/`) · clase sin unidad (`<research>/evidence/<class>/` con sidecar de procedencia) · `hard-doc` (su casa especial, §2.3). **Ante ambigüedad pregunta y no avanza**; el ingest-log queda idéntico (§2.6) | Un destino por defecto (`evidence/misc/`, o la vieja bandeja) para no frenar la operación — adivinar la casa es exactamente el drift que el destino obligatorio existe para impedir |
+| B26 | **Qué pasa con `paths`, la guarda y los inbox que ya existen.** | `inbox` **sale de `paths`**; entran `evidence` y `hard_docs` como casas declaradas; **la protección de rutas pasa a las casas reales** (§4.4, §5). Los `inbox/` de proyectos adoptados son **legado congelado** —bronze que se lee y jamás se reescribe— y `/migrate` los reconcilia moviendo, nunca editando (§2.6, §9.1) | (a) Dejar `inbox` en `paths` como ruta protegida vacía — casa fantasma en el contrato; (b) borrar los inbox legados al adoptar — destruiría bronze, que es justamente lo que jamás se toca |
+
+**E2 — Roster normativo de archivos repo-level.**
+
+| # | Decisión | Resolución propuesta | Alternativa descartada |
+|---|---|---|---|
+| B27 | **¿Qué archivos de nivel repo reconoce el framework?** | **Tabla cerrada** (§4.5) con rol, lector, momento de lectura y clase de cada uno: `README.md`, `CLAUDE.md`, `framework.config.yaml`, `constitution.md`, los registries y `STATUS.md`, el índice generado, y la `SPEC.md` del kit. **Un archivo repo-level nuevo exige enmienda de esta spec**, como los prefijos exigen config + glosario | Dejarlo a la convención de cada repo — es el mismo vacío que G6 reportó para los registries, un nivel más arriba: nadie sabe qué archivo es legítimo ni quién lo lee |
+| B28 | **Qué puede contener un archivo de entrada.** | **El conocimiento vive UNA vez:** `README.md`, `CLAUDE.md` y el índice son **punteros delgados o vistas generadas**, jamás segundas casas. Prueba: si se borran, no se pierde ninguna regla — solo el atajo (§4.5) | Permitir que el archivo de entrada resuma las reglas "para comodidad del lector" — un resumen es una copia que deriva en silencio (principio de diseño #4) |
+| B29 | **Dos archivos que la gente espera encontrar y no existen.** | **`briefing.md` no existe** (el briefing es la Parte II del plan, B1/§12 G1) y **`AGENTS.md` no es parte del framework**: si un harness lo exige, se **genera** desde la misma fuente que `CLAUDE.md` (§4.5) | Redactar `AGENTS.md` a mano junto a `CLAUDE.md` — dos archivos de instrucciones escritos por separado divergen; es la segunda casa con otro nombre |
+
+**E3 — Idioma de prosa como parámetro.**
+
+| # | Decisión | Resolución propuesta | Alternativa descartada |
+|---|---|---|---|
+| B30 | **¿En qué idioma se escribe lo que el framework produce?** | **`language:` en la config** (§1.8): el framework es inglés —nombres, comandos, campos, enums, etiquetas, columnas— y la **prosa** de salidas y plantillas se escribe en el idioma declarado del proyecto | (a) Todo en inglés, incluida la prosa — obligaría a un corpus en un idioma que el equipo no habla, y la evidencia se lee, no se decora; (b) idioma implícito por convención — es como nacieron los híbridos que el principio #6 vino a matar |
+| B31 | **¿Cómo soporta una skill dos idiomas?** | **Una sola versión de cada skill y plantilla** (nombres y mecánica en inglés) que escribe su prosa en el idioma configurado; **jamás copias traducidas**. Los renderizados para terceros (PDF, deck) son **vistas derivadas fuera del KB** (§1.8) | Skills o plantillas duplicadas por idioma — dos casas del mismo contrato que divergen al primer cambio (principio de diseño #4) |
+| B32 | **¿Dónde vive `language` y qué cuesta cambiarlo?** | **Config operativa**, fuera del bloque ratificado —no porta autoridad epistémica (§12, G4)—, pero **cambiarlo tras el primer artefacto es migración** (§9), no edición: evergreen se actualiza, los derivados se regeneran y **los records no se reescriben** (§1.8) | (a) Meterlo al bloque ratificado — cargaría el gate humano con una perilla de forma; (b) tratarlo como edición libre — implicaría reescribir records para "dejar el repo uniforme", que es falsificar evidencia |
 
 ---
 
@@ -1213,3 +1481,17 @@ estar en la agenda de la Fase 2. Se anotan, no se deciden.*
    `context` (§12, G2). La spec declara la regla; el kit 0.2.0 la implementa
    junto con la migración del enum. Si el gate humano rechaza esa resolución, el
    trabajo de 0.2.0 cambia — por eso conviene resolverla antes del bump.
+
+*Agregadas por las enmiendas pre-gate del 2026-08-19:*
+
+7. **Reconciliación de los `inbox/` legados** (§2.6). La asigna `/migrate`, que
+   es Fase 3.5. Hasta que exista, un repo adoptado convive con su bandeja
+   congelada: se lee como bronze, se cita, y no recibe nada nuevo.
+8. **Generación de `AGENTS.md`** desde la misma fuente que `CLAUDE.md` (§4.5).
+   La spec fija la regla — el generador no existe todavía, así que hasta que
+   exista el archivo simplemente no se crea.
+9. **Dónde se registra el puntero de un `hard-doc` que vive fuera del repo.**
+   §2.3 exige puntero + `sha256` + sidecar "en el registry", pero ningún
+   registry de la tabla de §12 G6 se declara dueño de esa fila; hoy la deja el
+   log de ingesta, que es donde `--keep` la escribe. Se anota: normar el dueño
+   explícito es enmienda, no redacción.
