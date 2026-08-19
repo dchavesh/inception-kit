@@ -2,7 +2,7 @@
 
 El **inception-framework** completo en una sola casa: spec, scripts, skills, plantillas y hook, empaquetado como **plugin de Claude Code** (este repo es también su marketplace) y consumido por los proyectos blite.
 
-**Estado: pre-0.1** — el repo nace con el contrato ratificado; el contenido llega con la extracción (Fase 1 del plan de mejoras — versión vigente en `meridian/docs/research/` vía su `registry/supersessions.md`; el plan y la spec migran acá — la v0.3 se redacta en este repo). Ya viven acá las skills de claude.ai (`claude-ai-skills/`).
+**Estado: 0.1.0** — la extracción de Fase 1 está hecha: 10 comandos en `bin/`, 6 skills con sus plantillas, `kit-init` idempotente y la guarda de inmutabilidad, todo generalizado vía `framework.config.yaml` (ver `CHANGELOG.md`). Pendiente: la spec v0.3 se redacta en este repo (Fase 2) y los flujos de entrada llegan en Fase 3. El plan de mejoras vigente vive en `meridian/docs/research/` vía su `registry/supersessions.md` y migra acá con la adopción.
 
 ## Contrato ratificado (2026-08-18)
 
@@ -26,3 +26,70 @@ El **inception-framework** completo en una sola casa: spec, scripts, skills, pla
 ## Principios (heredados del plan de mejoras — no negociables)
 
 Simplicidad — un mecanismo por problema; los edge cases se adaptan al framework, jamás al revés. Skills sin lógica de negocio. Procesos endurecidos, investigación libre. Un contrato, un lugar, varios lectores. Colocación por unidad. El norte: **coordinación · organización · extracción**.
+
+## Qué hay adentro
+
+```
+.claude-plugin/     plugin.json + marketplace.json (el repo es su propio marketplace)
+bin/                los 10 comandos deterministas — van al PATH de Bash con el plugin activo
+  kitlib/           núcleo compartido: config, IDs, parsing, fechas, vocabulario, registries
+skills/             las 6 skills del plugin, con sus plantillas adentro
+templates/          lo que kit-init siembra en un repo: framework.config.yaml + hook
+claude-ai-skills/   las 3 skills del otro lado de la frontera (el humano las copia — ver su README)
+```
+
+| Comando | Qué hace |
+|---|---|
+| `kit-init` | siembra el repo, instala el hook y corre las migraciones. Idempotente |
+| `doctor` | integridad del repo: instalación, protocols, findings, supersesiones, IDs, tablero |
+| `derive-status` | regenera el tablero derivado desde los frontmatter |
+| `derive-review-by` | deriva `review_by` por hallazgo y lista vencidos |
+| `validate-report` | valida el formato del report de una unidad (`--lenient` reservado a `/adopt`) |
+| `claim-audit-sample` | muestra determinista de afirmaciones + candidatos a eco |
+| `extract-registry` | extrae requisitos a la RTM (con marks) y propaga enmiendas |
+| `append-metrics` | agrega la fila de métricas del cierre (columnas desde la config) |
+| `freeze-protocols` | `pending → frozen`. Gate humano: exige `--confirm` |
+| `ingest` | ingesta verificada al inbox; borra el original solo tras verificar el remoto |
+
+| Skill | Qué hace |
+|---|---|
+| `/inception-kit:plan` | necesidad → mapa de unidades + Bloque Común + protocols en `pending` |
+| `/inception-kit:launch` | payload de una unidad frozen+ready, preflight incluido; sella session |
+| `/inception-kit:close` | QA completo → RTM → métricas → findings → `done` |
+| `/inception-kit:status` | tablero + caducidad + integridad + próxima acción |
+| `/inception-kit:ingest` | ingesta verificada de archivos externos |
+| `/inception-kit:synthesis` | pre-flight PASS/FAIL y, con orden humana, el fan-in |
+
+## Instalación
+
+En Claude Code, una vez por máquina:
+
+```
+/plugin marketplace add https://gitlab.com/blite-systems/tools/inception-kit.git
+/plugin install inception-kit@inception-kit
+```
+
+Y una vez por repo consumidor, desde su raíz:
+
+```
+kit-init
+```
+
+`kit-init` es idempotente y es también el runner de migraciones: se vuelve a
+correr después de cada update del kit. Las skills de claude.ai se instalan
+aparte, una vez por cuenta — ver `claude-ai-skills/README.md`.
+
+**Requisitos:** git y Python 3.10+. Sin dependencias: si PyYAML está instalado
+se usa, y si no, el kit trae su propio lector del subconjunto de YAML que la
+config necesita.
+
+## Cómo se lee un repo con el kit puesto
+
+- **`framework.config.yaml`** en la raíz es el contrato y el ancla: los
+  comandos encuentran el repo subiendo hasta él.
+- **`.inception-kit/`** es la costura: el hook y su librería, vendorizados y
+  versionados con el repo — nada apunta al caché del plugin, así que el hook
+  corre aunque Claude Code no esté instalado.
+- El shim del hook va a la **ruta efectiva** que dicte `core.hooksPath`; si el
+  repo ya tenía un `pre-commit`, se conserva como `pre-commit.local` y sigue
+  corriendo primero.
