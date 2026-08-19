@@ -1,0 +1,29 @@
+{
+  "name": "inception-kit",
+  "owner": {
+    "name": "blite systems"
+  },
+  "metadata": {
+    "description": "Marketplace propio del inception-kit: el repo se distribuye a sí mismo."
+  },
+  "plugins": [
+    {
+      "name": "inception-kit",
+      "source": "./",
+      "description": "El inception-framework completo: scripts deterministas, skills de coordinación, plantillas y guarda de inmutabilidad, parametrizados por el framework.config.yaml de cada repo.",
+      "version": "0.1.0",
+      "author": {
+        "name": "blite systems"
+      },
+      "repository": "https://gitlab.com/blite-systems/tools/inception-kit",
+      "category": "research",
+      "keywords": [
+        "research",
+        "governance",
+        "provenance",
+        "records",
+        "inception-framework"
+      ]
+    }
+  ]
+}
