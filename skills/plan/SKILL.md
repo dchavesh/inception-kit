@@ -37,9 +37,14 @@ y el freeze es su orden — esta skill jamás congela ni lanza.**
 5. **Extraer los protocols** desde la Parte III del plan — **verbatim, sin
    parafrasear** — a `<investigations>/<id>-<slug>/00-protocol.md`, usando
    `templates/protocol.md`. Frontmatter completo, `status: pending`.
-6. **Correr `derive-status`.** El tablero debe mostrar las nuevas como
-   "ready — falta freeze (gate humano)" o "espera a …".
-7. **Entregar al humano:** el mapa en una tabla, qué queda ready tras el freeze,
+6. **Declarar `refresh:` donde corresponda** (spec §6.2): si la unidad responde
+   una pregunta que hay que rehacer cada tanto —haya vencido o no— va su
+   cadencia (`<N><w|m|y>`). Se declara la cadencia, jamás la fecha. Si no
+   aplica, se omite: no se inventa recurrencia.
+7. **Correr `derive-status` y `derive-index`.** El tablero debe mostrar las
+   nuevas como "ready — falta freeze (gate humano)" o "espera a …"; el índice,
+   su objetivo en una línea.
+8. **Entregar al humano:** el mapa en una tabla, qué queda ready tras el freeze,
    y los gates pendientes en orden (ratificar mapa → `freeze-protocols
    --confirm` a su orden → `/inception-kit:launch`). Commit del plan y los
    protocols en draft/pending.

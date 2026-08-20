@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Chequeo de recurrencia — qué venció y qué relanzamiento PROPONER (spec §6).
+
+Las dos capas de un mecanismo, ambas derivadas y ninguna almacenada:
+
+  · `review_by` (§6.1) — fecha del record + horizonte de su volatilidad. Vencido
+    sin re-verificar ⇒ baja un nivel de madurez: se refresca o entra degradado.
+  · `refresh:` (§6.2) — cadencia declarada en el protocol. Al cumplirse, toca
+    **una corrida o versión nueva que supersede a la vencida, jamás una edición**.
+
+**Este comando propone; jamás ejecuta.** Los gates son humanos (§0 — autoridad
+en los gates humanos): acá salen la lista y la acción concreta que correspondería,
+y el humano decide si la corre. No escribe un solo archivo del repo.
+
+Exit 0 si no hay nada que proponer · exit 1 si lo hay (lo consume una corrida
+periódica: `templates/ci/recurrence.yml`).
+
+Uso: check-recurrence [--quiet]
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib import freshness
+from kitlib import registry as reg
+from kitlib import registrystore as store
+from kitlib.dates import today
+from kitlib.ids import load_units
+
+TITLE_WIDTH = 56
+
+
+def print_expiries(rows: list) -> None:
+    print("## review_by vencidos (spec §6.1)\n")
+    if not rows:
+        print("Ninguno.\n")
+        return
+    print("| Unit | # | Finding | Date | review_by |")
+    print("|---|---|---|---|---|")
+    for row in rows:
+        print(f"| {row.unit} | {row.number} | {row.title[:TITLE_WIDTH]} "
+              f"| {row.date} | {row.review_by} |")
+    print()
+
+
+def print_cadences(rows: list) -> None:
+    print("## `refresh:` cumplidos (spec §6.2)\n")
+    if not rows:
+        print("Ninguno.\n")
+        return
+    print("| Unit | refresh | Last close | Due |")
+    print("|---|---|---|---|")
+    for row in rows:
+        print(f"| {row.unit} | {row.cadence} | {row.last_close} | {row.due} |")
+    print()
+
+
+def proposals(config, expired: list, due: list, now: str) -> list[str]:
+    """Qué correspondería hacer. Una línea por propuesta, con su acción concreta."""
+    units = load_units(config)
+    out: list[str] = []
+
+    for unit_id in sorted({row.unit for row in expired}):
+        count = sum(1 for row in expired if row.unit == unit_id)
+        out.append(
+            f"**{unit_id}** — {count} hallazgo(s) vencido(s): re-verificar y emitir "
+            f"`02-findings.vN` **por supersesión declarada** (`migrate relabel` no "
+            f"aplica: esto es investigación nueva, no relabel). Si no se re-verifica, "
+            f"cada hallazgo entra a la síntesis **degradado un nivel de madurez** — "
+            f"jamás lavado (§6.1).")
+
+    for row in due:
+        unit = units.get(row.unit)
+        slug = unit.slug if unit else "?"
+        out.append(
+            f"**{row.unit} ({slug})** — cadencia `{row.cadence}` cumplida el "
+            f"{row.due}: re-ejecutar la unidad y emitir la versión nueva que "
+            f"**supersede** a la vencida (`/inception-kit:launch {row.unit}` tras el "
+            f"gate humano de relanzamiento). Jamás una edición del record vencido "
+            f"(§6.2).")
+
+    synthesis = [row for row in store.read(config, reg.GATES)
+                 if reg.is_synthesis_gate(row.get("gate"))]
+    if synthesis and (expired or due):
+        last = synthesis[-1]
+        out.append(
+            f"**Re-síntesis** — hay síntesis emitida ({last.get('date')}: "
+            f"{last.get('record_out')}) y material vencido por encima de ella: la "
+            f"síntesis se **re-emite por supersesión declarada**, jamás editando la "
+            f"anterior (§6.4). Correr el pre-flight con "
+            f"`/inception-kit:synthesis preflight` antes de proponer el gate.")
+    return out
+
+
+def main() -> None:
+    config = kitconfig.load()
+    now = today()
+    quiet = "--quiet" in sys.argv
+
+    expiries = freshness.expiries(config, now)
+    expired = freshness.expired(expiries)
+    unlabelled = freshness.unlabelled(expiries)
+    cadences = freshness.cadences(config, now)
+    due = freshness.expired(cadences)
+    blocked = [row for row in cadences if row.state in ("not-closed", "no-close-date")]
+
+    horizons = " · ".join(f"{word} {months}m" for word, months in config.horizons.items())
+    print(f"# Recurrencia — {now}\n")
+    print(f"Horizontes (`framework.config.yaml`): {horizons}\n")
+
+    if not quiet:
+        print_expiries(expired)
+        print_cadences(due)
+
+    lines = proposals(config, expired, due, now)
+    print("## Propuestas (el gate es humano — este comando no ejecuta nada)\n")
+    if not lines:
+        print("Nada que proponer: ningún `review_by` vencido y ninguna cadencia "
+              "cumplida.\n")
+    for index, line in enumerate(lines, start=1):
+        print(f"{index}. {line}\n")
+
+    if unlabelled:
+        print(f"AVISO: {len(unlabelled)} hallazgo(s) sin etiqueta de volatilidad "
+              "parseable — sin ella no hay `review_by` que derivar (spec §6.1).",
+              file=sys.stderr)
+    for row in blocked:
+        print(f"AVISO: {row.unit} declara `refresh: {row.cadence}` pero "
+              f"{'no está en `done`' if row.state == 'not-closed' else 'su `02-findings` vigente no tiene `date`'}"
+              " — la cadencia se deriva del último cierre.", file=sys.stderr)
+
+    sys.exit(1 if lines else 0)
+
+
+if __name__ == "__main__":
+    main()

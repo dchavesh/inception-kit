@@ -1,0 +1,39 @@
+# Chequeo de recurrencia periódico — OPCIONAL (spec §6).
+#
+# `kit-init` NO lo instala: copialo a `.github/workflows/` solo si querés que la
+# frescura se revise sola. No es parte del contrato del repo (§4.5): es una
+# comodidad operativa, y por eso vive en `templates/` del kit.
+#
+# **Lo que corre acá PROPONE; jamás ejecuta.** `check-recurrence` sale con
+# código 1 cuando hay `review_by` vencidos o cadencias `refresh:` cumplidas, y
+# eso es todo lo que hace: nadie relanza una unidad ni re-emite una síntesis sin
+# gate humano (spec §6, §11). El job rojo es un recordatorio, no una orden.
+#
+# Requisitos: git y Python 3.10+ (sin dependencias) y el plugin `inception-kit`
+# disponible en el runner. Si no lo está, apuntá `KIT` a un checkout del kit.
+
+name: recurrence
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # lunes 09:00 UTC — ajustá la cadencia del recordatorio
+  workflow_dispatch:
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Traer el kit
+        run: git clone --depth 1 "${{ vars.INCEPTION_KIT_URL }}" /tmp/inception-kit
+
+      - name: Integridad del repo
+        run: /tmp/inception-kit/bin/doctor
+
+      - name: Recurrencia — qué venció y qué proponer
+        run: /tmp/inception-kit/bin/check-recurrence | tee "$GITHUB_STEP_SUMMARY"

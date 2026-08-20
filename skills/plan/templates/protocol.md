@@ -8,6 +8,7 @@ plan: <ruta del plan al que pertenece — de ahí sale el Bloque Común del payl
 runs: 2
 mode: independent
 context: scoped
+refresh: null
 constitution: null
 session: null
 ---
@@ -48,6 +49,11 @@ Frontmatter — qué es cada campo:
                                y es la postura de exploración, competencia de
                                ideas y toda unidad sensible a falsificación.
                 Si se omite, rige `context.default` de la config.
+  refresh       cadencia de re-ejecución, `<N><w|m|y>` (p. ej. `18m`). Opcional.
+                Se declara la CADENCIA, jamás la fecha: la fecha se deriva de la
+                cadencia más el último cierre. Al cumplirse, toca una corrida o
+                versión nueva que SUPERSEDE a la vencida — nunca una edición.
+                `check-recurrence` la vigila y propone; el gate es humano.
   constitution  versión de la constitution vigente al lanzar. Lo sella /launch;
                 es procedencia de las reglas bajo las que corrió, no lo que la
                 unidad leyó (eso lo evidencia el payload.md sellado).
