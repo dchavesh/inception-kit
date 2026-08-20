@@ -64,6 +64,7 @@ class Unit:
     session: str | None
     runs: int
     mode: str
+    context: str
     path: Path
 
     @property
@@ -99,6 +100,7 @@ def load_units(config: Config) -> dict[str, Unit]:
             session=meta.get("session"),
             runs=parse_runs(config, meta, protocol),
             mode=parse_mode(config, meta, protocol),
+            context=parse_context(config, meta, protocol),
             path=protocol,
         )
     return {unit_id: units[unit_id] for unit_id in sorted(units, key=unit_sort_key)}
@@ -125,6 +127,16 @@ def parse_mode(config: Config, meta: dict, protocol: Path) -> str:
     return mode
 
 
+def parse_context(config: Config, meta: dict, protocol: Path) -> str:
+    """Postura de contexto de la unidad (spec §8.1). Default: `context.default`."""
+    from .config import CONTEXT_POSTURES
+    context = meta.get("context") or config.context_default
+    if context not in CONTEXT_POSTURES:
+        fail(f"{config.relative(protocol)}: `context: {context}` — uno de "
+             f"{list(CONTEXT_POSTURES)}")
+    return context
+
+
 def find_unit_dir(config: Config, unit_id: str) -> Path:
     matches = sorted(config.investigations.glob(f"{unit_id}-*"))
     if len(matches) != 1:
@@ -145,7 +157,7 @@ def unit_dirs(config: Config) -> list[Path]:
 def latest_artifact(unit_dir: Path, stem: str) -> Path:
     """Versión vigente de un artefacto: mayor `NN-kind.vN.md`, o la base.
 
-    Supersesión (spec §1.2): las versiones anteriores nunca se borran; quedan
+    Supersesión (spec §0.2 #2): las versiones anteriores nunca se borran; quedan
     marcadas en `registry/supersessions.md`. Los scripts operan sobre la vigente.
     """
     versioned = []

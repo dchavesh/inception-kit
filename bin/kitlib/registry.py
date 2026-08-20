@@ -13,8 +13,12 @@ from .report import REGISTRY_EXTRA_COLUMNS, REQ_COLUMNS
 
 CONFLICT_COLUMNS = ("ID", "Units", "Records", "Description", "Evidence weight",
                     "Resolution", "Status", "Date")
-INGEST_COLUMNS = ("Date", "File in inbox", "sha256 (12)", "Origin", "Original")
+#: `Destination` nombra la ruta destino real (unidad · `evidence/<class>/` ·
+#: casa de `hard-doc`) o el puntero externo de un hard-doc que vive afuera —
+#: la bandeja ya no existe (spec §2.6). El esquema no cambió: la columna sí.
+INGEST_COLUMNS = ("Date", "Destination", "Class", "sha256 (12)", "Origin", "Original")
 SUPERSESSION_COLUMNS = ("Superseded record", "Superseded by", "Date", "Reason")
+GATE_COLUMNS = ("Date", "Gate", "Decision", "Amends", "Record out")
 METRICS_FIXED_COLUMNS = ("Date", "Unit")
 
 #: Valores del campo `Status` de la RTM (interfaz del kit, en inglés).
@@ -67,7 +71,7 @@ def supersessions_seed(config: Config) -> str:
     return (
         "# Registry — Supersessions\n\n"
         "*Record append-only. La supersesión es una operación, no una convención "
-        "(spec §1.2): el record superado JAMÁS se borra ni se edita — queda marcado "
+        "(spec §0.2 #2): el record superado JAMÁS se borra ni se edita — queda marcado "
         "acá, y los scripts resuelven siempre a la versión vigente (mayor "
         "`NN-kind.vN.md`, o la base). Consumidor: la síntesis y cualquier lector de un "
         "record superado; momento: antes de citar.*\n\n"
@@ -80,8 +84,26 @@ def ingest_log_seed(config: Config) -> str:
         "# Registry — Ingest log\n\n"
         "*Record append-only: una fila por archivo ingerido vía `ingest`. La "
         "procedencia de lo que entra al repo se registra acá; el original se borra "
-        "solo tras verificar la copia contra el remoto.*\n\n"
+        "solo tras verificar la copia contra el remoto. Toda ingesta declara "
+        "destino (spec §2.6) y `Destination` nombra la ruta destino real. Acá vive "
+        "también la fila del `hard-doc` que quedó FUERA del repo: puntero + "
+        "`sha256` + sidecar (§2.3) — la ausencia del binario nunca es ausencia de "
+        "procedencia.*\n\n"
         + table(INGEST_COLUMNS)
+    )
+
+
+def gates_seed(config: Config) -> str:
+    return (
+        "# Registry — Gates\n\n"
+        "*Record append-only: un registro por **gate consumido** (spec §7.4, §12 "
+        "G6) — cuál, cuándo, qué se decidió y qué enmendó. Antes este rastro estaba "
+        "disperso entre CLAUDE.md y changelogs; acá tiene casa. Un acta de "
+        "ratificación agrupa gates sin que ninguno pierda su autoridad: se anota "
+        "una fila por gate del acta. Consumidor: la síntesis, la auditoría y quien "
+        "redacte la próxima versión de la constitution; momento: al resolver o "
+        "auditar un gate.*\n\n"
+        + table(GATE_COLUMNS)
     )
 
 
@@ -101,17 +123,19 @@ def qa_audits_seed(config: Config) -> str:
     return (
         "# Registry — QA Audits\n\n"
         "*Record append-only: el rastro reproducible de la auditoría de afirmaciones "
-        "de cada `/close` (spec §5 — toda verificación deja rastro como record). El "
+        "de cada `/close` (spec §10.2 — toda verificación deja rastro como record). El "
         "resumen cuantitativo vive en `metrics.md`; acá vive el detalle de qué se "
         "probó, cómo y con qué resultado. Consumidor: la síntesis y el humano al "
         "ponderar la madurez de una unidad.*\n"
     )
 
 
-#: Registries append-only: su propio encabezado lo declara, y el hook lo hace
-#: cumplir. `requirements` y `conflicts` NO están: sus filas se marcan (fila
-#: superada, conflicto resuelto) sin borrarse — se editan por diseño.
-APPEND_ONLY = ("metrics", "ingest_log", "supersessions", "migrations", "qa_audits")
+#: Registries append-only (spec §12, G6): su propio encabezado lo declara, y el
+#: hook lo hace cumplir. `requirements` y `conflicts` NO están: son record
+#: **marcable** — sus filas se marcan (fila superada, conflicto resuelto) sin
+#: borrarse jamás. `status` tampoco: es vista derivada, no record.
+APPEND_ONLY = ("metrics", "ingest_log", "supersessions", "migrations", "qa_audits",
+               "gates")
 
 #: nombre lógico → función que lo siembra
 SEEDS = {
@@ -122,4 +146,5 @@ SEEDS = {
     "ingest_log": ingest_log_seed,
     "migrations": migrations_seed,
     "qa_audits": qa_audits_seed,
+    "gates": gates_seed,
 }
