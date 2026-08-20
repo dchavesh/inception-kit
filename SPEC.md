@@ -2,7 +2,7 @@
 id: inception-framework-spec
 type: constitution
 version: 0.4
-status: proposed — pendiente de ratificación humana
+status: ratified — 2026-08-20 (gate humano: Sección A confirmada, Sección B aprobada completa)
 date: 2026-08-20
 supersedes: inception-framework-v0.3
 home: inception-kit (este repo)
@@ -1819,6 +1819,21 @@ acta, y ninguno bloquea la ratificación.
 
 ---
 
+### 14.7 Ratificación de la v0.4 (2026-08-20)
+
+**Gate humano consumado el 2026-08-20:** Sección A del acta v0.4 confirmada
+(A1–A13) y Sección B aprobada completa (B1–B12). Adjudicaciones del coordinador
+sobre las tres lagunas, aceptadas en el mismo acto: (1) el token del gate de
+adjudicación de vigentes queda sin fijar en la letra — el kit le da nombre en el
+pase de tooling; (2) la fila de gate faltante del flujo de adopción es ajuste de
+tooling post-gate; (3) el proyecto de dos puertas queda a decisión humana caso
+por caso hasta que la práctica genere la regla. `status:` sube a **ratified**.
+El pase de tooling que esta letra habilita (censo con ecosistema y planes,
+constancias retiradas, refs a v0.4, nombre y fila del gate de vigentes) no
+requiere gate: implementa lo ratificado.
+
+---
+
 # ACTA DE GATE — spec v0.3 · **CONSUMIDA el 2026-08-19**
 
 > **Esta acta ya se resolvió.** Se conserva porque §14.3 traza sus enmiendas a
@@ -1974,9 +1989,9 @@ estar en la agenda de la Fase 2. Se anotan, no se deciden.*
 
 ---
 
-# ACTA DE GATE — spec v0.4
+# ACTA DE GATE — spec v0.4 · **CONSUMIDA el 2026-08-20**
 
-*Esta acta es el gate, y es el **único** pendiente en este documento. Está
+*Esta acta fue el gate de la v0.4 — consumido el 2026-08-20 (§14.7). Está
 diseñada para resolverse **leyendo solo el acta**: cada ítem trae qué se decide,
 la resolución propuesta y —cuando la decisión es nueva— la alternativa
 descartada. Ratificar el acta ratifica la v0.4 y sube su `status:` a `ratified`;
@@ -2084,4 +2099,4 @@ por regla dura de esta sesión no se tocó una sola línea de tooling.*
 
 ---
 
-*Fin del acta. El gate pendiente es este.*
+*Fin del acta. Consumida el 2026-08-20 — ver §14.7. Este documento no tiene gates pendientes.*
