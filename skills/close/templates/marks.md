@@ -22,9 +22,11 @@ interpretar nada más.*
 
 ## Ejemplo
 
+*IDs de ejemplo neutros: `rXX` es la unidad que cierra, `rYY` una anterior.*
+
 ```
-# r02 — cierre 2026-08-13
-r02-req01 new
-r02-req02 duplicate:r01-req05
-r02-req03 contradicts:r00c-req02 supersedes:r00c-req02
+# rXX — cierre AAAA-MM-DD
+rXX-req01 new
+rXX-req02 duplicate:rYY-req05
+rXX-req03 contradicts:rYY-req02 supersedes:rYY-req02
 ```

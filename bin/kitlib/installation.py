@@ -6,8 +6,8 @@ verifica.
 Dos reglas duras del plan viven acá:
 
 1. **El shim va a la RUTA EFECTIVA de hooks**, no a `.git/hooks` a ciegas:
-   se resuelve con `git rev-parse --git-path hooks`, que honra
-   `core.hooksPath` (meridian, por ejemplo, lo tiene en `scripts/hooks`).
+   se resuelve con `git rev-parse --git-path hooks`, que honra `core.hooksPath`
+   cuando el repo lo declara (p. ej. apuntado a una carpeta versionada).
 2. **Nada apunta al caché del plugin.** `${CLAUDE_PLUGIN_ROOT}` cambia en cada
    update y el hook tiene que correr sin Claude Code instalado: por eso el
    hook y su librería se **vendorizan** dentro del repo, versionados, y el
