@@ -17,23 +17,38 @@ Correr `derive-status`. La unidad debe estar **`frozen` y ready** (todos sus
 - `pending` ⇒ falta el freeze, que es **gate humano**: avisar y parar.
 - No ready ⇒ decir exactamente qué unidad espera y parar.
 
-## 2. Armar el payload
+## 2. Armar el payload — **según la postura de contexto**
+
+Leer `context:` del protocol; si no lo declara, rige `context.default` de
+`framework.config.yaml`. La postura decide qué se concatena (spec §8.2):
+
+| `context` | Composición del payload |
+|---|---|
+| `scoped` | preflight + **briefing** + `02-findings` vigentes de sus `needs` + protocol |
+| `clean-room` | preflight + protocol. **Nada más.** |
 
 Escribir `<investigations>/<UNIT_ID>-<slug>/payload.md` — **sin commitear**:
 antes de lanzar se regenera a voluntad. Se concatena, sin editar contenido:
 
 1. **Bloque de preflight** — `templates/preflight.md` de esta skill, resolviendo
-   `{unit}`, `{runs}` y `{mode}`.
-2. **El Bloque Común** del plan al que pertenece la unidad (la Parte II del
+   `{unit}`, `{runs}`, `{mode}`, `{context}` y `{language}`.
+2. **El briefing** del plan al que pertenece la unidad (la Parte II del
    documento que declara su frontmatter `plan:`). Si el protocol no lo declara,
-   **preguntá al humano cuál es** — no lo adivines.
+   **preguntá al humano cuál es** — no lo adivines. *Solo si `scoped`.*
 3. El **`02-findings` vigente** de cada unidad en `needs`, en el orden
-   declarado (vigente = mayor `.vN`, nunca la versión superada).
+   declarado (vigente = mayor `.vN`, nunca la versión superada). *Solo si
+   `scoped`* — y una unidad `clean-room` **no tiene `needs`** por contrato.
 4. El `00-protocol.md` de la unidad.
 
-**Jamás viajan:** la semilla o tesis del proyecto, la constitution completa,
-reports o raws de otras unidades, ni material de unidades que no estén en
-`needs`. El payload crece con cada `need`: por eso los `needs` son mínimos.
+**Jamás viajan, en ninguna postura:** la semilla o tesis del proyecto, la
+constitution completa, reports o raws de otras unidades, ni material de
+unidades que no estén en `needs`. El payload crece con cada `need`: por eso los
+`needs` son mínimos.
+
+**Corpus solo-vigente:** lo que viaja es siempre la versión vigente (mayor
+`.vN`). Un record superado jamás entra a un payload — un corpus donde conviven
+tres versiones sin vigente declarado produce eco por construcción. `doctor` lo
+verifica; si falla, se resuelve antes de lanzar.
 
 **Resolver `runs` y `mode`:** del frontmatter del protocol (`runs: N`,
 `mode: independent | chained`); si no los declara, de `runs.default` y
@@ -50,14 +65,17 @@ corpus viejo: jamás se emite.)
 - Entre corridas, la sesión invoca la skill `new-run` de claude.ai; para cerrar,
   `research-close` (las tres skills de claude.ai se instalan una vez por cuenta
   desde `claude-ai-skills/` del kit — ver su README).
-- Los exports verbatim van a `raw/run-NN.md` de la unidad, vía
-  `/inception-kit:ingest`.
+- Los exports verbatim aterrizan **directo** en `raw/run-NN.md` de la unidad:
+  `/inception-kit:ingest <export> --unit UNIT_ID --run N`. Nadie los mueve
+  después — no hay bandeja de entrada (spec §2.6, §12 G3).
 
 ## 4. Sellar (cuando el humano trae la URL del chat)
 
 1. En el frontmatter del protocol: `session: <URL>`, `constitution: <versión
    vigente>`, `status: frozen → running`. **Solo esos campos** — el cuerpo del
-   protocol es inmutable y el hook lo hace cumplir.
+   protocol es inmutable y el hook lo hace cumplir. `constitution:` sella la
+   **versión de gobernanza vigente al lanzar** (procedencia de las reglas bajo
+   las que corrió), no lo que la unidad leyó: eso lo evidencia el payload.
 2. **Commitear el payload junto con el sello.** Desde ese commit el payload es
    **record**: la evidencia exacta de qué leyó la sesión. Se regenera libremente
    solo ANTES de lanzar, jamás después.

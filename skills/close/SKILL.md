@@ -15,9 +15,10 @@ sin confirmación humana explícita.
    `status: frozen → running`). Si el humano no la trajo: pedirla y sellarla
    primero.
 2. En la carpeta de la unidad: `raw/run-NN.md` (exports verbatim, uno por
-   corrida declarada) y los tres documentos de cierre de la sesión — report en
-   plantilla, borrador de findings y bitácora — generados con la skill
-   `research-close` de claude.ai. Si falta algo: pedirlo y parar.
+   corrida declarada, aterrizados **directo** por `/inception-kit:ingest --unit
+   … --run …` — el cierre no mueve nada) y los tres documentos de cierre de la
+   sesión — report en plantilla, borrador de findings y bitácora — generados
+   con la skill `research-close` de claude.ai. Si falta algo: pedirlo y parar.
 3. **Contar los raws contra el contrato:** `runs: N` del protocol. Si faltan
    corridas, la desviación se anota por escrito en el protocol antes de seguir;
    jamás se completa investigando de más.
@@ -38,11 +39,14 @@ sin confirmación humana explícita.
    registry de auditorías.
 3. **Kill criteria** — ¿algún hallazgo dispara los kill criteria globales del
    plan o los propios de la unidad? **Cualquier disparo ⇒ STOP: gate humano.**
+   Todo gate consumido —este, el de una fuente inexistente, el que sea— deja su
+   fila en `registry/gates.md`: cuál, cuándo, qué se decidió y qué enmendó.
 4. **Commit de records** — `raw/`, `01-report` y `03-sources`. Inmutables desde
    ese commit; el hook lo garantiza.
-5. **Extracción a la RTM** — juzgar cada `<unit>-reqNN` contra las filas
-   existentes del registry y escribir el archivo de marks
-   (`templates/marks.md` de esta skill tiene la gramática), luego
+5. **Extracción a la RTM** — juzgar cada `<unit>-reqNN` de la sección 7
+   (*Requirements table*) contra las filas existentes del registry y escribir
+   el archivo de marks (`templates/marks.md` de esta skill tiene la
+   gramática), luego
    `extract-registry UNIT_ID --marks <archivo>`. `contradicts` sin
    `supersedes:` ⇒ rechazo total: se declara o se registra distinto. Los
    conflictos entre unidades quedan anotados como `con-NN`, sin resolverse acá.
@@ -51,10 +55,12 @@ sin confirmación humana explícita.
    los pasos 1–2. Nada estimado; lo no medido se declara con su token
    (`n/a`, `n/m`).
 7. **Finalizar `02-findings.md`** sobre el borrador de la sesión: ≤2 páginas,
-   5–10 hallazgos numerados, cada uno con `(madurez · volatilidad · fecha)`
-   parseable por `derive-review-by`; tablas-insumo solo referenciadas; huecos
-   explícitos. Si hubo varias corridas, conservar la atribución por `run-NN`.
-   Commit.
+   5–10 hallazgos numerados, cada uno con
+   `(<established|supported|plausible|speculative> · <high|medium|low> · fecha)`
+   parseable por `derive-review-by` — el enum va en inglés y sin dialecto, la
+   prosa en el idioma que declare `language`. Tablas-insumo solo referenciadas;
+   huecos explícitos. Si hubo varias corridas, conservar la atribución por
+   `run-NN`. Commit.
 8. **Cerrar** — `status: qa → done`; correr `derive-status` y `doctor`;
    anunciar qué unidades quedaron ready y cuál es el próximo gate humano.
 

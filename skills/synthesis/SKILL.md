@@ -39,3 +39,6 @@ que lo sostiene.
 **Nada de esto se commitea sin revisión humana del resultado.** Si la síntesis
 supera una síntesis anterior, entra por supersesión declarada — jamás
 editando la vieja.
+
+**La síntesis misma es gate humano**, y como todo gate consumido deja su fila en
+`registry/gates.md`: cuál, cuándo, qué se decidió y qué enmendó.

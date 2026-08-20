@@ -7,6 +7,7 @@ inputs: []
 plan: <ruta del plan al que pertenece — de ahí sale el Bloque Común del payload>
 runs: 2
 mode: independent
+context: scoped
 constitution: null
 session: null
 ---
@@ -40,6 +41,18 @@ Frontmatter — qué es cada campo:
                 partes de una sola unidad epistémica (`chained`). Etiquetas
                 run-01..run-NN en ambos modos. Si se omiten, rigen los defaults
                 de framework.config.yaml.
-  constitution  versión de la constitution vigente al lanzar. Lo sella /launch.
+  context       postura de contexto: qué viaja en el payload.
+                  scoped     — preflight + briefing + findings vigentes de sus
+                               `needs` + protocol.
+                  clean-room — preflight + protocol, NADA MÁS. Exige `needs: []`
+                               y es la postura de exploración, competencia de
+                               ideas y toda unidad sensible a falsificación.
+                Si se omite, rige `context.default` de la config.
+  constitution  versión de la constitution vigente al lanzar. Lo sella /launch;
+                es procedencia de las reglas bajo las que corrió, no lo que la
+                unidad leyó (eso lo evidencia el payload.md sellado).
   session       URL del chat. Lo sella /launch; es la prueba de qué corrió dónde.
+
+El cuerpo se redacta en el idioma que declare `language` en la config; los
+campos, valores de enum y etiquetas van siempre en inglés.
 -->
