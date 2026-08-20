@@ -56,6 +56,11 @@ from kitlib.sidecar import SUFFIX as SIDECAR_SUFFIX          # noqa: E402
 #: Campos que `/launch` puede sellar sobre un protocol ya congelado (spec §5).
 SEALABLE_KEYS = {"status", "session", "constitution", "runs", "mode", "context"}
 
+#: `status:` con que una constitution declara que TODAVÍA NO está en vigor. El
+#: protocolo duro de enmienda gobierna un documento vigente; la propuesta que el
+#: gate va a ratificar se edita dentro de su misma versión (spec §4.3).
+NOT_IN_FORCE = ("draft", "proposed")
+
 
 @dataclass(frozen=True)
 class Change:
@@ -156,7 +161,28 @@ def check_view(config, path: str, schema, errors: list) -> None:
                       "`registry render` (spec §12 G6, §0.2 #1)")
 
 
+def in_force(path: str) -> bool:
+    """¿La constitution ya está EN VIGOR en HEAD? (spec §4.3, regla pre-gate).
+
+    El protocolo duro de enmienda gobierna una constitution **en vigor**.
+    Mientras su `status:` es `draft`/`proposed`, el documento todavía es la
+    propuesta que el gate va a ratificar: editarla —incluido ratificarla— entra
+    a esa misma versión y **no la bumpea, porque no hay nada vigente que
+    superar**. Ratificado el gate, la versión queda congelada y todo cambio
+    posterior vuelve al protocolo duro.
+    """
+    text = git("show", f"HEAD:{path}")
+    if not text.strip():
+        return False  # todavía no existe en HEAD: no hay nada vigente que superar
+    head_fm, _ = frontmatter_and_body(text)
+    # Sin `status:` declarado se la trata como VIGENTE: la guarda falla del lado
+    # seguro, y el protocolo duro se aplica.
+    return not str(head_fm.get("status") or "").strip().lower().startswith(NOT_IN_FORCE)
+
+
 def check_constitution(path: str, errors: list) -> None:
+    if not in_force(path):
+        return
     head_fm, _ = frontmatter_and_body(git("show", f"HEAD:{path}"))
     new_fm, _ = frontmatter_and_body(git("show", f":{path}"))
     if head_fm.get("version") == new_fm.get("version"):
@@ -181,6 +207,8 @@ def check_ratified_block(path: str, constitution: str, staged: dict, errors: lis
     changed = ratified_diff(path)
     if not changed:
         return
+    if not in_force(constitution):
+        return  # pre-gate: los valores se ratifican CON la constitution (§4.3)
     detail = (f"{path}: bloque ratificado modificado ({', '.join(changed)}) — "
               "es una ENMIENDA, no una edición")
     if constitution not in staged:
