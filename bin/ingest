@@ -1,22 +1,39 @@
 #!/usr/bin/env python3
-"""Ingesta verificada de archivos externos al `inbox/` del repo.
+"""Ingesta clasificada en la puerta (spec §2.6). El destino es OBLIGATORIO.
 
-Por cada archivo: copia al inbox (nombre saneado a kebab-case ASCII si hace
-falta), calcula sha256 y agrega fila al log de ingesta del registry
-(append-only). Luego, EN ORDEN: commit de inbox+log → push → verificación
-contra el remoto (`git ls-remote`: el SHA de la rama remota debe ser HEAD — las
-≥2 copias independientes que exige el benchmark) → borrado del original,
-archivo por archivo re-verificado por hash, jamás por carpeta. Si el push o la
-verificación remota fallan, NADA se borra y el script sale con error.
+El único staging es **externo al repo** — la carpeta de descargas del humano,
+el adjunto sin abrir, el export recién bajado. El repo no tiene bandeja de
+entrada: toda llegada se clasifica al ingerir, y hay exactamente tres destinos.
 
-`--keep` conserva los originales (p. ej. documentación dura cuyo original vive
-fuera del repo). Si el destino ya existe con distinto contenido: falla — el
-inbox es inmutable.
+  --unit UNIT [--run N]   el material pertenece a una unidad
+                          · con `--run N`  → `<unit>/raw/run-NN.md` (el verbatim
+                            de una corrida aterriza DIRECTO: nadie lo mueve)
+                          · sin `--run`    → `<unit>/raw/<archivo>` + sidecar
+  --class CLASS           tiene clase de fuente pero no pertenece a ninguna
+                          unidad → `<research>/evidence/<class>/` + sidecar
+                          de procedencia OBLIGATORIO
+  --hard-doc              documentación dura (§2.3): su casa especial,
+                          `paths.hard_docs`. JAMÁS se borra
+  --hard-doc --external PUNTERO
+                          el hard-doc vive FUERA del repo (tamaño o licencia):
+                          el repo retiene puntero + sha256 + sidecar, y la fila
+                          va al ingest-log — la ausencia del binario nunca es
+                          ausencia de procedencia
 
-El push usa el remoto por nombre (`origin` salvo `--remote`), así que respeta
-la configuración de git del usuario: alias SSH, credenciales, lo que sea.
+**Ante ambigüedad, la ingesta pregunta y no avanza**: sin destino, con dos
+destinos, o con una clase desconocida, se detiene. Nunca elige por defecto —
+adivinar la casa es el drift que el destino obligatorio existe para impedir.
 
-Uso: ingest ARCHIVO... [--keep] [--remote NOMBRE]
+Desenlace del original, sin cambios: copia al destino → fila en el log de
+ingesta → commit → push → **verificación contra el remoto** (`git ls-remote`:
+el SHA de la rama remota debe ser HEAD — dos copias independientes) → recién
+entonces se borra el original, archivo por archivo re-verificado por hash. Si
+el push o la verificación fallan, **NADA se borra**. `--keep` conserva el
+original cuando debe seguir viviendo afuera (el caso normal de `hard-doc`).
+
+Uso: ingest ARCHIVO... (--unit UNIT [--run N] | --class CLASS | --hard-doc
+     [--external PUNTERO]) [--keep] [--license TEXTO] [--consent TEXTO]
+     [--method TEXTO] [--remote NOMBRE]
 """
 import hashlib
 import re
@@ -24,16 +41,51 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import config as kitconfig
+from kitlib import vocab
 from kitlib.dates import today
 from kitlib.errors import fail
+from kitlib.ids import find_unit_dir, is_valid_unit_id
 
 CHUNK = 1 << 20
 SUBJECT_LIMIT = 120
 DEFAULT_REMOTE = "origin"
+RUN_SUFFIXES = (".md", ".markdown", ".txt")
+SIDECAR_SUFFIX = ".meta.yaml"
+
+USAGE = ("uso: ingest ARCHIVO... (--unit UNIT [--run N] | --class CLASS | --hard-doc "
+         "[--external PUNTERO]) [--keep] [--license T] [--consent T] [--method T] "
+         "[--remote NOMBRE]")
+
+
+@dataclass(frozen=True)
+class Options:
+    files: tuple
+    unit: str | None
+    run: int | None
+    source_class: str | None
+    hard_doc: bool
+    external: str | None
+    keep: bool
+    license: str | None
+    consent: str | None
+    method: str | None
+    remote: str
+
+
+@dataclass(frozen=True)
+class Landing:
+    """Un archivo con su destino resuelto."""
+    source: Path
+    destination: Path        # ruta en el repo (el binario, o el sidecar si es externo)
+    sidecar: Path | None
+    digest: str
+    source_class: str
+    pointer: str | None      # puntero externo, cuando el bronze vive afuera
 
 
 def sane_name(name: str) -> str:
@@ -65,61 +117,226 @@ class Git:
         return result
 
 
-def parse_args(argv: list[str]) -> tuple[list[Path], bool, str]:
-    keep, remote, files, index = False, DEFAULT_REMOTE, [], 0
+def parse_args(argv: list[str]) -> Options:
+    values = {"--unit": None, "--run": None, "--class": None, "--external": None,
+              "--license": None, "--consent": None, "--method": None,
+              "--remote": DEFAULT_REMOTE}
+    keep = hard_doc = False
+    files, index = [], 0
     while index < len(argv):
         arg = argv[index]
         if arg == "--keep":
             keep = True
-        elif arg == "--remote":
+        elif arg == "--hard-doc":
+            hard_doc = True
+        elif arg in values:
             if index + 1 >= len(argv):
-                fail("--remote requiere un nombre")
-            remote = argv[index + 1]
+                fail(f"{arg} requiere un valor\n{USAGE}")
+            values[arg] = argv[index + 1]
             index += 1
         elif arg.startswith("--"):
-            fail(f"flag desconocida: {arg}")
+            fail(f"flag desconocida: {arg}\n{USAGE}")
         else:
             files.append(Path(arg))
         index += 1
     if not files:
-        fail("uso: ingest ARCHIVO... [--keep] [--remote NOMBRE]")
-    return files, keep, remote
+        fail(USAGE)
+
+    run = None
+    if values["--run"] is not None:
+        if not str(values["--run"]).isdigit() or int(values["--run"]) < 1:
+            fail("--run: número de corrida entero ≥ 1 (etiquetas run-01..run-NN)")
+        run = int(values["--run"])
+    return Options(
+        files=tuple(files), unit=values["--unit"], run=run,
+        source_class=values["--class"], hard_doc=hard_doc,
+        external=values["--external"], keep=keep, license=values["--license"],
+        consent=values["--consent"], method=values["--method"],
+        remote=values["--remote"],
+    )
 
 
-def copy_to_inbox(config, files: list[Path], keep: bool) -> tuple[list, list, list]:
-    inbox = config.inbox
-    inbox.mkdir(parents=True, exist_ok=True)
-    outcome = "conservado (--keep)" if keep else "borrado tras verificar remoto"
-    rows, pairs, names = [], [], []
-    for source in files:
+def check_class(value: str | None, context: str) -> None:
+    """La clase sale del enum cerrado de spec §2.1. No hay carpeta de sobrantes."""
+    if value == vocab.HARD_DOC_CLASS:
+        fail(f"--class {vocab.HARD_DOC_CLASS}: la documentación dura tiene casa "
+             "especial y jamás se borra — usá `--hard-doc` (spec §2.3)")
+    if value not in vocab.EVIDENCE_CLASSES:
+        fail(f"--class {value}: clase desconocida ({context}). El enum de la spec "
+             f"(§2.1) es {list(vocab.EVIDENCE_CLASSES)} + `{vocab.HARD_DOC_CLASS}`.\n"
+             "No hay carpeta de sobrantes: `evidence/misc/` y equivalentes están "
+             "prohibidos. Si no sabés la clase, PREGUNTÁ — la ingesta no avanza.")
+
+
+def resolve_destination(config, options: Options) -> str:
+    """Uno y solo uno de los tres destinos. Ambigüedad ⇒ pregunta y no avanza."""
+    if options.hard_doc and (options.unit or options.source_class):
+        fail("destino ambiguo: `--hard-doc` con `--unit`/`--class` — un archivo "
+             "aterriza en UNA casa, y el mismo archivo que podría ser "
+             "`document-drop` o `hard-doc` lo decide el humano, no el script "
+             "(spec §2.6). Separá la ingesta.")
+    if options.run is not None and not options.unit:
+        fail("--run exige --unit: el verbatim de una corrida pertenece a su unidad")
+    if options.external and not options.hard_doc:
+        fail("--external es solo de `--hard-doc`: el bronze de una unidad o de una "
+             "clase vive en el repo (spec §2.6)")
+
+    if options.hard_doc:
+        return "hard-doc"
+
+    if options.unit:
+        if not is_valid_unit_id(config, options.unit):
+            fail(f"--unit {options.unit}: fuera de la gramática de IDs del repo")
+        if options.run is None:
+            # No es el verbatim de una corrida: la clase del material no se
+            # adivina — «no se sabe la clase» es ambigüedad, y la ingesta para.
+            if not options.source_class:
+                fail(f"--unit {options.unit} sin `--run`: falta `--class` — el bronze "
+                     "que no es el verbatim de una corrida declara su clase de "
+                     f"fuente ({list(vocab.EVIDENCE_CLASSES)}) para su sidecar de "
+                     "procedencia (spec §2.2, §2.6). PREGUNTÁ AL HUMANO cuál es.")
+            check_class(options.source_class, f"bronze de {options.unit}")
+        return "unit"
+
+    if options.source_class:
+        check_class(options.source_class, "clase sin unidad")
+        return "evidence"
+
+    fail("destino ausente — toda ingesta declara su destino (spec §2.6), y hay "
+         "exactamente tres:\n"
+         "  · unidad             --unit UNIT_ID --run N   (verbatim de una corrida)\n"
+         "                       --unit UNIT_ID --class C (otro bronze de la unidad)\n"
+         f"  · clase sin unidad   --class <{'|'.join(vocab.EVIDENCE_CLASSES)}>\n"
+         "  · documentación dura --hard-doc [--external PUNTERO]\n"
+         "PREGUNTÁ AL HUMANO cuál es: adivinar la casa es el drift que el "
+         "destino obligatorio existe para impedir.")
+
+
+def run_destination(config, options: Options, source: Path) -> Path:
+    if len(options.files) != 1:
+        fail("--run toma un solo archivo: una corrida, un verbatim")
+    if source.suffix.lower() not in RUN_SUFFIXES:
+        fail(f"{source.name}: `--run` escribe `run-NN.md` (verbatim de texto). "
+             f"Para otro bronze de la unidad, ingerí con `--unit` sin `--run` "
+             f"— aterriza en `raw/` con su sidecar.")
+    return find_unit_dir(config, options.unit) / "raw" / f"run-{options.run:02d}.md"
+
+
+def sidecar_text(config, options: Options, source: Path, digest: str,
+                 source_class: str, pointer: str | None) -> str:
+    """Sidecar de procedencia (spec §2.2): origen, fecha, método y sha256.
+
+    Licencia y consentimiento se escriben **cuando aplican** y solo si el humano
+    los declaró: el sidecar vive en una casa protegida y no se edita después.
+    """
+    lines = [
+        "# Sidecar de procedencia — inception-kit (spec §2.2).",
+        "# Bronze: el original jamás se edita ni se reescribe. Este archivo lo",
+        "# acompaña y vive en su misma casa protegida.",
+        f"class: {source_class}",
+        f"origin: {source.parent}",
+        f"original_name: {source.name}",
+        f"date: {today()}",
+        f"method: {options.method or 'ingest'}",
+        f"sha256: {digest}",
+    ]
+    if pointer:
+        lines.append(f"pointer: {pointer}")
+        lines.append("in_repo: false  # el binario vive fuera; acá quedan puntero y hash")
+    if options.license:
+        lines.append(f"license: {options.license}")
+    if options.consent:
+        lines.append(f"consent: {options.consent}")
+    lines.append(f"kit_version: {config.kit_version}")
+    return "\n".join(lines) + "\n"
+
+
+def plan_landings(config, options: Options, destination: str) -> list[Landing]:
+    landings = []
+    for source in options.files:
         if not source.is_file():
             fail(f"{source}: no existe o no es archivo")
         digest = sha256(source)
-        destination = inbox / sane_name(source.name)
-        if destination.exists():
-            if sha256(destination) != digest:
-                fail(f"{destination.name}: ya existe en el inbox con OTRO contenido — el "
-                     "inbox es inmutable; renombrá el archivo nuevo (p. ej. sufijo -v2) "
-                     "y reintentá")
-            print(f"{source.name}: ya ingerido idéntico como {destination.name}")
+
+        if destination == "unit":
+            unit_dir = find_unit_dir(config, options.unit)
+            if options.run is not None:
+                landings.append(Landing(source, run_destination(config, options, source),
+                                        None, digest, vocab.RESEARCH_RUN_CLASS, None))
+                continue
+            target = unit_dir / "raw" / sane_name(source.name)
+            landings.append(Landing(source, target, Path(f"{target}{SIDECAR_SUFFIX}"),
+                                    digest, options.source_class, None))
+        elif destination == "evidence":
+            target = config.evidence / options.source_class / sane_name(source.name)
+            landings.append(Landing(source, target, Path(f"{target}{SIDECAR_SUFFIX}"),
+                                    digest, options.source_class, None))
+        else:  # hard-doc
+            target = config.hard_docs / sane_name(source.name)
+            if options.external:
+                sidecar = Path(f"{target}{SIDECAR_SUFFIX}")
+                landings.append(Landing(source, sidecar, sidecar, digest,
+                                        vocab.HARD_DOC_CLASS, options.external))
+            else:
+                landings.append(Landing(source, target, Path(f"{target}{SIDECAR_SUFFIX}"),
+                                        digest, vocab.HARD_DOC_CLASS, None))
+    return landings
+
+
+def write_landings(config, options: Options, landings: list[Landing],
+                   outcome: str) -> tuple[list[str], list[str]]:
+    rows, written = [], []
+    for landing in landings:
+        landing.destination.parent.mkdir(parents=True, exist_ok=True)
+        if landing.pointer:
+            # El binario se queda afuera: al repo entra el sidecar con el puntero.
+            write_once(config, landing.sidecar,
+                       sidecar_text(config, options, landing.source, landing.digest,
+                                    landing.source_class, landing.pointer))
+            written.append(config.relative(landing.sidecar))
         else:
-            shutil.copy2(source, destination)
-            print(f"{source.name} → {config.relative(destination)}")
-        names.append(destination.name)
-        pairs.append((source, digest))
-        rows.append(f"| {today()} | {destination.name} | {digest[:12]} "
-                    f"| {source.parent} | {outcome} |")
-    return rows, pairs, names
+            copy_once(config, landing.source, landing.destination, landing.digest)
+            written.append(config.relative(landing.destination))
+            if landing.sidecar:
+                write_once(config, landing.sidecar,
+                           sidecar_text(config, options, landing.source, landing.digest,
+                                        landing.source_class, None))
+                written.append(config.relative(landing.sidecar))
+        rows.append(f"| {today()} | {landing.pointer or config.relative(landing.destination)} "
+                    f"| {landing.source_class} | {landing.digest[:12]} "
+                    f"| {landing.source.parent} | {outcome} |")
+    return rows, written
 
 
-def commit(git: Git, config, names: list[str]) -> None:
+def copy_once(config, source: Path, destination: Path, digest: str) -> None:
+    if destination.exists():
+        if sha256(destination) != digest:
+            fail(f"{config.relative(destination)}: ya existe con OTRO contenido — el "
+                 "bronze es inmutable; renombrá el archivo nuevo (p. ej. sufijo -v2) "
+                 "y reintentá")
+        print(f"{source.name}: ya ingerido idéntico como {config.relative(destination)}")
+        return
+    shutil.copy2(source, destination)
+    print(f"{source.name} → {config.relative(destination)}")
+
+
+def write_once(config, path: Path, content: str) -> None:
+    if path.exists():
+        if path.read_text(encoding="utf-8") != content:
+            fail(f"{config.relative(path)}: ya existe con OTRO contenido — el sidecar "
+                 "es record; una corrección entra como archivo nuevo")
+        return
+    path.write_text(content, encoding="utf-8")
+    print(f"  sidecar → {config.relative(path)}")
+
+
+def commit(git: Git, config, written: list[str]) -> None:
     log = config.registry_file("ingest_log")
-    git("add", "--", *[str(config.relative(config.inbox / name)) for name in names],
-        config.relative(log))
+    git("add", "--", *written, config.relative(log))
     if not git("diff", "--cached", "--name-only").stdout.strip():
         print("nada nuevo que commitear (solo duplicados) — se verifica el remoto igual")
         return
-    subject = f"feat: ingest — {', '.join(names)}"
+    subject = f"feat: ingest — {', '.join(Path(name).name for name in written)}"
     if len(subject) > SUBJECT_LIMIT:
         subject = subject[:SUBJECT_LIMIT - 1] + "…"
     git("commit", "-m", subject)
@@ -138,12 +355,13 @@ def push_and_verify(git: Git, remote: str) -> None:
     print(f"remoto verificado: {remote}/{branch} @ {head[:12]}")
 
 
-def delete_verified(pairs: list[tuple[Path, str]]) -> list[str]:
+def delete_verified(landings: list[Landing]) -> list[str]:
     problems = []
-    for source, digest in pairs:
+    for landing in landings:
+        source = landing.source
         if not source.exists():
             problems.append(f"{source}: ya no existe — no se borra nada por él")
-        elif sha256(source) != digest:
+        elif sha256(source) != landing.digest:
             problems.append(f"{source}: cambió desde la copia (hash distinto) — NO se borra")
         else:
             source.unlink()
@@ -153,28 +371,40 @@ def delete_verified(pairs: list[tuple[Path, str]]) -> list[str]:
 
 def main() -> None:
     config = kitconfig.load()
-    files, keep, remote = parse_args(sys.argv[1:])
+    options = parse_args(sys.argv[1:])
+    destination = resolve_destination(config, options)
+
     log = config.registry_file("ingest_log")
     if not log.exists():
         fail(f"{config.relative(log)}: no existe — correr `kit-init`")
 
+    # Un hard-doc que vive afuera es la ÚNICA copia: borrar el original lo
+    # destruiría, y la documentación dura jamás se borra (spec §2.3).
+    keep = options.keep or bool(options.external)
+    outcome = ("conservado (vive fuera del repo)" if options.external
+               else "conservado (--keep)" if keep
+               else "borrado tras verificar remoto")
+
     git = Git(config.root)
-    rows, pairs, names = copy_to_inbox(config, files, keep)
+    landings = plan_landings(config, options, destination)
+    rows, written = write_landings(config, options, landings, outcome)
     log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(rows) + "\n",
                    encoding="utf-8")
-    commit(git, config, names)
-    push_and_verify(git, remote)
+    commit(git, config, written)
+    push_and_verify(git, options.remote)
 
     if keep:
-        print(f"{len(names)} archivo(s) ingeridos; originales conservados (--keep)")
+        print(f"{len(landings)} archivo(s) ingeridos a `{destination}`; "
+              f"originales conservados{' (--external)' if options.external else ''}")
         return
-    problems = delete_verified(pairs)
+    problems = delete_verified(landings)
     if problems:
         print("ingesta completa, pero con originales NO borrados:", file=sys.stderr)
         for problem in problems:
             print(f"  ✗ {problem}", file=sys.stderr)
         sys.exit(1)
-    print(f"{len(names)} archivo(s): ingeridos, pusheados, verificados y originales borrados")
+    print(f"{len(landings)} archivo(s) a `{destination}`: ingeridos, pusheados, "
+          "verificados y originales borrados")
 
 
 if __name__ == "__main__":
