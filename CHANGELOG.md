@@ -7,6 +7,94 @@ El kit se actualiza por **bump de versión**, jamás por cirugía repo por repo.
 Al subir de versión, cada repo consumidor corre `kit-init` (runner de
 migraciones) — principio #7, sintonía por migración.
 
+## [0.3.0] — 2026-08-19
+
+**Integridad profunda.** Los registries dejan de ser markdown y pasan a ser
+**datos con schema**; nace el **índice puerta-de-entrada** que §1.2 y §4.5 ya
+daban por supuesto; `/migrate` materializa la migración por capas de §9 más allá
+del runner de versiones; y un chequeo de recurrencia vigila las dos capas de
+frescura de §6 — proponiendo, jamás ejecutando.
+
+### Changed — BREAKING
+
+- **Los nueve registries son DATOS y su `.md` es una vista generada.** El
+  registry vive en `<registry>/data/<name>.jsonl` — **JSON Lines**, un objeto
+  por línea — y el `.md` se renderiza desde ahí. Se eligió JSONL por
+  simplicidad: append-only es literalmente *agregar una línea*, verificable con
+  una comparación de prefijo byte a byte sin parser y sin ambigüedad de
+  indentación, y `json` es stdlib (la guarda sigue corriendo con git + Python
+  estándar, spec §4.4). **La spec norma el régimen, no el formato** (§12 G6 y
+  Preguntas al final #2): los tres regímenes no cambian, ahora se hacen cumplir
+  sobre los datos.
+  - **append-only** (metrics, ingest-log, supersessions, migrations, qa-audits,
+    gates): el contenido previo no se pisa.
+  - **markable** (requirements, conflicts): la fila no se borra y solo mutan
+    los campos declarados `markable` — el ID y lo que la fila afirmó, jamás.
+  - **derived view** (`STATUS.md`): sin datos propios; deriva de los protocols.
+- **Nadie edita un registry a mano.** El comando **`registry`** es la única
+  puerta: `add` (append-only), `mark` (marcable), `render` (vistas), `show`,
+  `schema`. `extract-registry`, `append-metrics` e `ingest` escriben por ahí.
+- **La guarda verifica los tres regímenes sobre los datos** y rechaza además
+  editar a mano la **vista** de un registry: tiene que ser exactamente la
+  regeneración de sus datos.
+- **`STATUS.md` cambia de forma**: columnas en inglés (`Unit`, `Status`,
+  `Needs`, `Ready`, `Note` — §1.8: las columnas siempre) y prosa en el idioma
+  que declare `language`. Es vista derivada: se regenera, no se migra.
+
+### Added
+
+- **`INDEX.md` — el índice puerta-de-entrada** (spec §1.2, §4.5), vista raíz
+  generada por `derive-index`. En una página: tablero con el objetivo de cada
+  unidad en una línea, **ADRs vigentes** (superado se marca, no se borra),
+  **conflictos abiertos**, **síntesis vigente** (la última fila del gate de
+  síntesis) y **dónde vive cada clase de cosa**, derivado de `paths`. Ninguna
+  regla vive ahí: si se borra, solo se pierde el atajo. `doctor` lo verifica
+  contra su regeneración.
+- **`/inception-kit:migrate` + `migrate`** — la migración por capas de spec §9,
+  entera. `plan` diagnostica sin escribir; `derived --apply` regenera tablero,
+  vistas e índice; `relabel UNIT --pass vocab|runs --apply` hace la
+  **supersesión mecánica** de un record de lectura; `relocate SRC --class C
+  --apply` reubica bronze legado. **Todo pase que escribe exige `--apply`**, y
+  el `--apply` se pide con el diff a la vista (§9.1).
+  - **El round-trip es la evidencia:** cada sustitución se registra con su
+    posición y el original se reconstruye byte a byte desde el texto nuevo. Si
+    no vuelve, el pase se aborta. El pase `vocab` toca etiquetas **solo dentro
+    de una anotación** — `alta` o `media` en prosa quedan intactas.
+  - **Nunca hay supersesiones vacías:** un record ya canónico no se supersede
+    «por consistencia».
+  - **Reubicar no es reescribir:** `relocate` mueve, verifica que el `sha256`
+    sea el mismo antes y después, y escribe el sidecar de procedencia. La
+    guarda acepta el rename **solo** con blob idéntico, destino en casa
+    protegida y la entrada de migraciones en el MISMO commit.
+  - **Rastro doble, siempre** (§9.2): entrada en el registry de migraciones +
+    anotación en el sidecar del record afectado. Un record sin sidecar recibe
+    uno; el sidecar pasa a ser **append-only** — la incisión va ahí y jamás
+    dentro del verbatim.
+- **`check-recurrence`** — las dos capas de frescura de spec §6 en un comando:
+  `review_by` vencidos y cadencias `refresh:` cumplidas, con los relanzamientos
+  y la re-síntesis que **propone**. No escribe un solo archivo y no ejecuta
+  nada: los gates son humanos. Exit 1 cuando hay algo que proponer.
+  `templates/ci/recurrence.yml` lo corre periódicamente — **opcional**, no lo
+  instala `kit-init`.
+- **`refresh:` en el contrato del protocol** (spec §6.2): cadencia `<N><w|m|y>`,
+  validada al cargar la unidad. Se declara la cadencia, jamás la fecha.
+- **Schema validado por `doctor`**: cada fila contra los campos declarados
+  (obligatorios, tipos, fechas ISO, enums, IDs únicos), el set cerrado de
+  archivos de datos, y cada vista contra su regeneración.
+- **Migración `0.2 → 0.3`** en el runner de `kit-init`: convierte cada tabla
+  markdown a datos fila por fila —sin reinterpretar nada— y deja el `.md` como
+  vista. Lo único que traduce es el dialecto que el propio kit escribió
+  (`Status` de conflicto `abierto` → `open`, porque los valores de enum van en
+  inglés), y la traducción queda declarada en el rastro. Idempotente.
+
+### Fixed
+
+- `derive-review-by` y el índice comparten el cálculo de frescura con
+  `check-recurrence` (`kitlib/freshness.py`): un contrato, un lugar.
+- `kit-init` corre las migraciones **antes** de sembrar (un repo viejo trae sus
+  registries en formato anterior) y regenera los derivados **al final**, ya con
+  `kit_version` sellada — antes el índice nacía desactualizado.
+
 ## [0.2.0] — 2026-08-19
 
 **La activación de la spec v0.3.** La spec quedó ratificada por gate humano el
