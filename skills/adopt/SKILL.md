@@ -108,10 +108,9 @@ del cierre, no un comentario:
    validó, **tal cual la imprimió el comando**, sin maquillar y sin resumir, más
    por qué se acepta: *corpus artesanal adoptado, anterior a la plantilla*. Es un
    record y declara lo que §4.2 exige (`class`, `consumer`, `reading-moment`,
-   `date`); vive en la carpeta de su unidad porque es de ella (principio de
-   diseño #5). *(El nombre va en inglés como todo nombre del framework; el
-   cuerpo, en `language`. Que §5 le declare su fila queda anotado para el batch
-   de enmiendas v0.4.)*
+   `date`); **§5 le declara su fila** en la carpeta de la unidad, y esa carpeta
+   es un set cerrado igual que la raíz. *(El nombre va en inglés como todo
+   nombre del framework; el cuerpo, en `language`.)*
 2. su fila de gate: `registry add gates --gate report-qa --decision «cierre
    retro-lenient aceptado: <n> desviaciones anotadas» --record_out «<unit>
    01-report»`;
@@ -130,6 +129,13 @@ Si el corpus trae versiones del mismo documento conviviendo, **el vigente lo
 elige el humano** — ningún mecanismo elige solo. Cada versión no vigente queda
 con su fila (`registry add supersessions`), porque el corpus solo-vigente es
 precondición estructural del payload (spec §8.3) y `doctor` lo verifica.
+
+Eso es el gate de **adjudicación de vigentes** (spec §11.1), el mismo que
+consume `/normalize` en su paso 4 — y **todo gate consumido deja su fila**
+(§7.4): `registry add gates --gate current-adjudication --decision «vigente de
+<concepto>: <cuál>, entre <n> versiones» --record_out «filas de supersesión de lo
+superado»`. Sin adjudicación no hay fila: si el corpus no trae versiones
+conviviendo, el gate no se disparó y no se inventa.
 
 Adoptado el corpus, la supersesión queda **preparada**: cada record vigente es
 la base de su familia, sin `.vN`, con su sidecar declarando que es corpus

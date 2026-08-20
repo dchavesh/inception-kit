@@ -44,8 +44,10 @@ sin confirmación humana explícita.
    Todo gate consumido —este, el de una fuente inexistente, el que sea— deja su
    fila con `registry add gates --gate <kind> --decision … --record_out …`:
    cuál, cuándo, qué se decidió y qué enmendó. Los `<kind>` del playbook de
-   inception son `constitution-ratification`, `map-ratification`, `report-qa`,
-   `kill-criteria`, `synthesis` y `ratified-block-amendment` (spec §11.1).
+   inception son `constitution-ratification`, `map-ratification`,
+   `current-adjudication`, `report-qa`, `kill-criteria`, `synthesis` y
+   `ratified-block-amendment` (spec §11.1). Son **nombres recomendados, no un
+   enum cerrado**: otro tipo de flujo trae los suyos.
 4. **Commit de records** — `raw/`, `01-report` y `03-sources`. Inmutables desde
    ese commit; el hook lo garantiza.
 5. **Extracción a la RTM** — juzgar cada `<unit>-reqNN` de la sección 7

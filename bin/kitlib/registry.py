@@ -162,8 +162,17 @@ QA_AUDITS = Registry(
 #: que qué gates existen es un playbook por tipo de flujo, y el kit no congela
 #: un playbook. Las skills escriben estos; una fila histórica con otro texto se
 #: lee igual (§13.2) — el registry es append-only y no se reescribe.
-GATE_KINDS = ("constitution-ratification", "map-ratification", "report-qa",
-              "kill-criteria", "synthesis", "ratified-block-amendment")
+#:
+#: `current-adjudication` es el nombre que el kit le da al gate de **adjudicación
+#: de vigentes** de §11.1, que la spec deja sin token a propósito (v0.4, laguna 1:
+#: los nombres de gate no son enum cerrado, así que el nombre es del kit y no de
+#: la letra). Lo consumen `/normalize` paso 4 y `/adopt` paso 7. **Las filas que el
+#: kit escribió antes de 0.4.1 pueden llevar `map-ratification`**, que es el nombre
+#: de otro gate: no se reescriben —el registry es append-only (§13.2)— y se leen
+#: por su decisión, que dice qué se adjudicó.
+GATE_KINDS = ("constitution-ratification", "map-ratification",
+              "current-adjudication", "report-qa", "kill-criteria", "synthesis",
+              "ratified-block-amendment")
 SYNTHESIS_GATE = "synthesis"
 #: Cómo se reconoce el gate de síntesis, incluido el dialecto con que pudo
 #: haberse escrito antes de que existiera el nombre canónico.
