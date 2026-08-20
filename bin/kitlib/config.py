@@ -1,12 +1,20 @@
 """`framework.config.yaml` — el contrato del repo consumidor.
 
-Un contrato, un lugar: rutas, gramática de IDs, contrato de corridas,
-horizontes de caducidad y definiciones versionadas de métricas viven acá y
-en ningún otro lado. Los scripts de `bin/` y el hook lo leen; nadie hardcodea.
+Un contrato, un lugar: rutas, gramática de IDs, contrato de corridas, postura
+de contexto por defecto, horizontes de caducidad, idioma de prosa y
+definiciones versionadas de métricas viven acá y en ningún otro lado. Los
+scripts de `bin/` y el hook lo leen; nadie hardcodea.
 
 El archivo es además el **ancla del repo**: los scripts del kit corren desde
 el caché del plugin, así que la raíz NO se deriva de `__file__` — se busca
 subiendo desde el directorio de trabajo hasta encontrar este archivo.
+
+**Bloque ratificado (spec §12, G4).** `horizons`, `runs`, `ids`, `metrics` y
+`context` portan autoridad epistémica: cambiarlos es una **enmienda** que exige
+subir `version:` de la constitution en el mismo commit. El hook lo hace
+cumplir. El resto (`paths`, `language`, `kit_version`, rutas inmutables extra)
+es config operativa — lo que no significa gratis: mover una ruta o cambiar
+`language` arrastra migración (§1.8, §9).
 """
 from __future__ import annotations
 
@@ -17,30 +25,43 @@ from pathlib import Path
 
 from . import yamlmin
 from .errors import fail
-from .vocab import VOLATILITY_WORDS
+from .vocab import HISTORICAL_VOLATILITY, VOLATILITY_WORDS
 
 CONFIG_NAME = "framework.config.yaml"
 KIT_DIR = ".inception-kit"
 ROOT_ENV = "INCEPTION_KIT_REPO"
 PROJECT_ENV = "CLAUDE_PROJECT_DIR"
 
+#: Las casas del repo (spec §5). `inbox` NO es una de ellas desde la spec v0.3:
+#: el único staging es externo al repo y la ingesta clasifica en la puerta
+#: (§2.6). `evidence` es la casa del bronze con clase pero sin unidad;
+#: `hard_docs`, la casa especial de la documentación dura (§2.3).
 DEFAULT_PATHS = {
     "research": "docs/research",
     "investigations": "docs/research/investigations",
     "registry": "docs/research/registry",
     "decisions": "docs/decisions",
-    "inbox": "inbox",
+    "evidence": "docs/research/evidence",
+    "hard_docs": "docs/hard-docs",
     "constitution": "docs/research/constitution.md",
 }
 DEFAULT_ID_WIDTH = 2
 DEFAULT_ID_CLASSES = {"r": "desk research", "f": "field work"}
 DEFAULT_RUNS = {"default": 2, "default_mode": "independent"}
-DEFAULT_HORIZONS = {"alta": 6, "media": 18, "baja": 36}
+DEFAULT_HORIZONS = {"high": 6, "medium": 18, "low": 36}
+DEFAULT_CONTEXT = "scoped"
+DEFAULT_LANGUAGE = "en"
 RUN_MODES = ("independent", "chained")
+CONTEXT_POSTURES = ("clean-room", "scoped")
 METRIC_KINDS = ("percent", "integer", "text")
 STATUS_ORDER = ("pending", "frozen", "running", "qa", "done")
+LANGUAGE_RE = re.compile(r"^[a-z]{2}$")
 
-#: Nombres de los registries: los fija la spec, no el proyecto (una casa por cosa).
+#: Claves con autoridad epistémica: cambiarlas es enmienda (spec §12, G4).
+RATIFIED_KEYS = ("horizons", "runs", "ids", "metrics", "context")
+
+#: Nombres de los registries: los fija la spec, no el proyecto (§12, G6).
+#: Los nueve del set cerrado — `gates` entra con la spec v0.3 (§7.4).
 REGISTRY_FILES = {
     "status": "STATUS.md",
     "conflicts": "conflicts.md",
@@ -50,6 +71,7 @@ REGISTRY_FILES = {
     "ingest_log": "ingest-log.md",
     "migrations": "migrations.md",
     "qa_audits": "qa-audits.md",
+    "gates": "gates.md",
 }
 
 
@@ -91,8 +113,12 @@ class Config:
         return self.path("decisions")
 
     @property
-    def inbox(self) -> Path:
-        return self.path("inbox")
+    def evidence(self) -> Path:
+        return self.path("evidence")
+
+    @property
+    def hard_docs(self) -> Path:
+        return self.path("hard_docs")
 
     @property
     def constitution(self) -> Path:
@@ -125,10 +151,20 @@ class Config:
     def runs_default_mode(self) -> str:
         return self.data["runs"]["default_mode"]
 
+    # — postura de contexto —
+    @property
+    def context_default(self) -> str:
+        return self.data["context"]["default"]
+
     # — caducidad —
     @property
     def horizons(self) -> dict:
         return self.data["horizons"]
+
+    # — idioma de prosa (spec §1.8) —
+    @property
+    def language(self) -> str:
+        return self.data["language"]
 
     # — métricas —
     @property
@@ -176,16 +212,20 @@ def find_repo_root(start: Path | None = None) -> Path:
          f"¿corriste `kit-init` en este repo?")
 
 
-def read_yaml(path: Path) -> dict:
-    text = path.read_text(encoding="utf-8")
+def parse_yaml(text: str, source: str = CONFIG_NAME) -> dict:
+    """Parsea el subconjunto YAML del contrato. PyYAML si está; si no, `yamlmin`."""
     try:
         import yaml
     except ImportError:
-        return yamlmin.load(text, source=path.name) or {}
+        return yamlmin.load(text, source=source) or {}
     try:
         return yaml.safe_load(text) or {}
     except yaml.YAMLError as error:  # pragma: no cover - depende del archivo
-        fail(f"{path}: YAML inválido — {error}")
+        fail(f"{source}: YAML inválido — {error}")
+
+
+def read_yaml(path: Path) -> dict:
+    return parse_yaml(path.read_text(encoding="utf-8"), source=path.name)
 
 
 def load(start: Path | None = None) -> Config:
@@ -195,14 +235,34 @@ def load(start: Path | None = None) -> Config:
     return Config(root=root, data=data)
 
 
+def normalize_horizons(raw: dict | None) -> dict:
+    """Claves de `horizons` en el enum vigente, traduciendo el dialecto histórico.
+
+    Una config 0.1.x trae `alta/media/baja`: son valores del enum de volatilidad
+    y migran con él (spec §1.6). La config es **evergreen**, así que se actualiza
+    in-place (§9.1) — y hasta que el runner reescriba el archivo, se lee
+    normalizada: si no, el kit 0.2.0 no podría ni cargar el repo que va a migrar.
+    """
+    if not raw:
+        return dict(DEFAULT_HORIZONS)
+    normalized = {}
+    for key, value in raw.items():
+        canonical = HISTORICAL_VOLATILITY.get(str(key).strip().lower(), key)
+        normalized[canonical] = value
+    return normalized
+
+
 def merge_defaults(raw: dict) -> dict:
     paths = {**DEFAULT_PATHS, **(raw.get("paths") or {})}
+    paths.pop("inbox", None)  # `inbox` salió del contrato con la spec v0.3 (§2.6)
     ids = raw.get("ids") or {}
     runs = raw.get("runs") or {}
+    context = raw.get("context") or {}
     records = raw.get("records") or {}
     metrics = raw.get("metrics") or {}
     return {
         "kit_version": raw.get("kit_version"),
+        "language": raw.get("language") or DEFAULT_LANGUAGE,
         "paths": paths,
         "ids": {
             "width": ids.get("width", DEFAULT_ID_WIDTH),
@@ -212,13 +272,27 @@ def merge_defaults(raw: dict) -> dict:
             "default": runs.get("default", DEFAULT_RUNS["default"]),
             "default_mode": runs.get("default_mode", DEFAULT_RUNS["default_mode"]),
         },
-        "horizons": raw.get("horizons") or dict(DEFAULT_HORIZONS),
+        "context": {"default": context.get("default", DEFAULT_CONTEXT)},
+        "horizons": normalize_horizons(raw.get("horizons")),
         "metrics": {
             "version": metrics.get("version", 1),
             "columns": metrics.get("columns") or [],
         },
         "records": {"extra_immutable_paths": records.get("extra_immutable_paths") or []},
     }
+
+
+def ratified_block(raw: dict) -> dict:
+    """El bloque ratificado, normalizado (spec §12, G4).
+
+    Se compara **el significado, no la ortografía**: se toma sobre la config ya
+    mezclada con los defaults y con `horizons` traducido del dialecto histórico
+    (§13.2). Así el relabel mecánico `alta→high` y el alta de una clave que ya
+    regía por default no disparan el gate de enmienda — y cualquier cambio real
+    de un número epistémico, sí.
+    """
+    merged = merge_defaults(raw or {})
+    return {key: merged[key] for key in RATIFIED_KEYS}
 
 
 def stamp_kit_version(text: str, version: str) -> str:
@@ -235,6 +309,13 @@ def validate(data: dict, source: Path) -> None:
     for name, value in data["paths"].items():
         if not isinstance(value, str) or value.startswith("/") or ".." in value:
             problems.append(f"paths.{name}: debe ser una ruta relativa al repo, sin `..`")
+    language = data["language"]
+    if not isinstance(language, str) or not LANGUAGE_RE.match(language):
+        problems.append(f"language: código ISO 639-1 de dos letras minúsculas "
+                        f"(default `{DEFAULT_LANGUAGE}`), no '{language}'")
+
+    if data["context"]["default"] not in CONTEXT_POSTURES:
+        problems.append(f"context.default: uno de {list(CONTEXT_POSTURES)}")
 
     width = data["ids"]["width"]
     if not isinstance(width, int) or width < 1:
@@ -256,7 +337,7 @@ def validate(data: dict, source: Path) -> None:
     horizons = data["horizons"]
     if set(horizons) != set(VOLATILITY_WORDS):
         problems.append(f"horizons: claves exactas {list(VOLATILITY_WORDS)} "
-                        f"(el enum migra con la spec v0.3, no acá)")
+                        f"(el enum es contrato de la spec §1.6, no perilla del repo)")
     else:
         for key, months in horizons.items():
             if not isinstance(months, int) or months < 1:

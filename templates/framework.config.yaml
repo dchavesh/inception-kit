@@ -1,28 +1,55 @@
 # framework.config.yaml — el contrato de ESTE repo con el inception-kit.
 #
-# Un contrato, un lugar: rutas, gramática de IDs, contrato de corridas,
-# horizontes de caducidad y definiciones de métricas viven acá y en ningún otro
-# lado. Los scripts del kit y el hook de inmutabilidad lo leen; nadie hardcodea.
+# Un contrato, un lugar: rutas, gramática de IDs, contrato de corridas, postura
+# de contexto, horizontes de caducidad, idioma de prosa y definiciones de
+# métricas viven acá y en ningún otro lado. Los scripts del kit y el hook de
+# inmutabilidad lo leen; nadie hardcodea.
 #
 # Este archivo es además el ancla del repo: los scripts lo buscan subiendo desde
 # el directorio de trabajo. Si lo movés, el kit deja de encontrar el repo.
 #
-# Lo NO configurable, a propósito: el enum de madurez/volatilidad y la plantilla
-# del report son contrato de la spec, no decisión por proyecto — viven en el kit.
+# BLOQUE RATIFICADO (spec §12, G4): `horizons`, `runs`, `ids`, `metrics` y
+# `context` portan autoridad epistémica. Cambiar cualquiera de sus claves es una
+# ENMIENDA: exige subir `version:` de la constitution en el MISMO commit, con su
+# fila de changelog. El hook lo hace cumplir. El resto (`paths`, `language`,
+# `kit_version`, rutas inmutables extra) es config operativa — que no es gratis:
+# mover una ruta o cambiar el idioma arrastra migración (spec §1.8, §9).
+#
+# Lo NO configurable, a propósito: el enum de madurez/volatilidad, las clases de
+# fuente y la plantilla del report son contrato de la spec, no decisión por
+# proyecto — viven en el kit.
 
 # Versión del kit que sembró o migró este repo. La mantiene `kit-init`;
-# `doctor` avisa cuando el kit instalado es más nuevo (principio #7: sintonía
-# por migración). No la edites a mano.
-kit_version: 0.1.0
+# `doctor` la reporta como ERROR cuando no coincide con el kit instalado
+# (spec §9.3: un repo desincronizado no está sano). No la edites a mano.
+kit_version: 0.2.0
 
-# Rutas, relativas a la raíz del repo. Cambiarlas es legal; moverlas después
-# implica migrar el contenido y volver a correr `kit-init`.
+# Idioma de PROSA de este repo (ISO 639-1). El framework es inglés: nombres de
+# skill y comando, campos de contrato, claves de config, valores de enum,
+# etiquetas, marks y columnas de tabla van SIEMPRE en inglés. Lo que se escribe
+# en este idioma es el cuerpo de protocols, reports, findings, sources y
+# payloads, la constitution del proyecto y sus ADRs, y lo que las skills le
+# dicen al humano. Una sola versión de cada skill y plantilla: jamás copias
+# traducidas. Cambiarlo tras el primer artefacto es MIGRACIÓN, no edición.
+language: en
+
+# Rutas, relativas a la raíz del repo. Son las casas del framework (spec §5):
+# cambiarlas es legal; moverlas después implica migrar el contenido y volver a
+# correr `kit-init`. NO hay bandeja de entrada: el único staging es externo al
+# repo y la ingesta clasifica en la puerta (spec §2.6).
 paths:
   research: docs/research
   investigations: docs/research/investigations
   registry: docs/research/registry
   decisions: docs/decisions
-  inbox: inbox
+  # Casa del bronze que tiene clase de fuente pero no pertenece a una unidad.
+  # Aterriza en `evidence/<class>/` con sidecar de procedencia obligatorio;
+  # `<class>` es un valor del enum de spec §2.1 — no hay carpeta de sobrantes.
+  evidence: docs/research/evidence
+  # Casa especial de la documentación dura (spec §2.3): jamás se borra. Cuando
+  # el original debe vivir fuera del repo, acá queda su sidecar con el puntero
+  # y el sha256, y la fila va al ingest-log.
+  hard_docs: docs/hard-docs
   constitution: docs/research/constitution.md
 
 # Gramática de IDs: llave estable y "tonta" + slug. El significado vive en el
@@ -30,6 +57,8 @@ paths:
 ids:
   # Ancho MÍNIMO de la parte numérica (default 2 → r01). Al desbordar, el ancho
   # crece (r99 → r100) y NADA se renumera. El orden es siempre numérico.
+  # Un solo ancho gobierna IDs de unidad, sub-IDs y IDs de registry (spec §12 G5);
+  # `adr-NNNN` es la única excepción, por convención MADR.
   width: 2
   # Set CERRADO de prefijos por clase de unidad: una letra minúscula cada uno.
   # Agregar una clase es una decisión del proyecto, con entrada de glosario.
@@ -45,13 +74,23 @@ runs:
   default: 2
   default_mode: independent
 
+# Postura de contexto por defecto, cuando el protocol de la unidad no declara
+# `context:`. Es la segunda cara del sesgo: el eco por frecuencia.
+#   scoped     — integración: preflight + briefing + findings vigentes de sus
+#                `needs` + protocol.
+#   clean-room — exploración y unidades sensibles a falsificación: preflight +
+#                protocol, NADA MÁS. Exige `needs: []`.
+context:
+  default: scoped
+
 # Horizontes de caducidad por volatilidad, en meses. `review_by` se DERIVA
 # (fecha del record + horizonte), jamás se almacena. Vencido sin re-verificar
 # baja un nivel de madurez: se refresca o entra degradado, jamás lavado.
+# Las claves son el enum de volatilidad de la spec (§1.6) — no se traducen.
 horizons:
-  alta: 6
-  media: 18
-  baja: 36
+  high: 6
+  medium: 18
+  low: 36
 
 # Definiciones versionadas de métricas: cada columna es una flag de
 # `append-metrics` y una columna del record append-only `registry/metrics.md`.
@@ -63,28 +102,30 @@ metrics:
   version: 1
   columns:
     - key: claims-valid
-      label: "% afirmaciones con fuente válida"
+      label: "% claims with a valid source"
       kind: percent
     - key: replication
-      label: "Tasa de replicación entre runs"
+      label: "Replication rate across runs"
       kind: percent
       tokens: [n/a]
     - key: echo-rate
-      label: "Tasa de eco"
+      label: "Echo rate"
       kind: percent
       tokens: [n/m]
     - key: conflicts-open
-      label: "Contradicciones abiertas"
+      label: "Open conflicts"
       kind: integer
     - key: cost
-      label: "Costo"
+      label: "Cost"
       kind: text
     - key: note
-      label: "Nota"
+      label: "Note"
       kind: text
 
 records:
   # Rutas extra que el hook trata como record inmutable, además de las que la
-  # spec ya protege (raw/, reports, findings, sources, payloads, ADRs, inbox).
-  # Ejemplo: el bronze de un producto que vive en el mismo repo.
+  # spec ya protege (raw/, reports, findings, sources, payloads, ADRs, la casa
+  # del bronze sin unidad y la de la documentación dura). Acá es también donde
+  # queda declarado un `inbox/` legado: bronze congelado que se lee y se cita,
+  # jamás se reescribe, y que `/migrate` reconcilia moviendo (spec §2.6, §9.1).
   extra_immutable_paths: []
