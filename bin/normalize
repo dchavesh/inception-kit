@@ -53,13 +53,18 @@ def print_roster(config, findings: list) -> list:
     print("## Roster de archivos repo-level (spec §4.5)\n")
     print("| Archivo | Veredicto | Detalle |")
     print("|---|---|---|")
-    verdicts = {roster.ROSTER: "en el roster", roster.QUEUED: "cola de enmiendas",
+    verdicts = {roster.ROSTER: "en el roster",
                 roster.OFF_ROSTER: "**FUERA del roster**"}
     for item in findings:
         print(f"| `{item.path}` | {verdicts[item.verdict]} | {item.detail} |")
     print("\n**La taxonomía es cerrada:** un archivo repo-level que no esté en la "
           "tabla no es «una excepción» — o se mueve a su casa, o entra por enmienda "
           "de la spec con su fila declarada.\n")
+    print("La fila del **ecosistema** la define un criterio —lo exige el mundo donde "
+          "el repo vive, no el framework, y no porta reglas adentro— y su lista es "
+          "ilustrativa: este censo reconoce la convención (`LICENSE`, `NOTICE`, "
+          "`CITATION.cff`), y una convención nueva sale acá como fuera del roster "
+          "para que **la adjudiques vos**, no para que el censo la invente.\n")
     return [item for item in findings if item.verdict == roster.OFF_ROSTER]
 
 
@@ -284,7 +289,8 @@ def mode_freeze(config, argv: list[str]) -> None:
 
 # ——— retire: borrar evergreen muerto ———
 
-def guard_deletion(config, relative: str, record_patterns: tuple) -> None:
+def guard_deletion(config, relative: str, record_patterns: tuple,
+                   plans: set) -> None:
     """Lo que este pase JAMÁS borra. Se planta antes de proponerlo, no después."""
     if relative.startswith(config.data["paths"]["hard_docs"].rstrip("/") + "/"):
         fail(f"{relative}: documentación dura — **jamás se borra** (spec §2.3). Es la "
@@ -294,6 +300,14 @@ def guard_deletion(config, relative: str, record_patterns: tuple) -> None:
         fail(f"{relative}: record — no se borra nunca (spec §4.1). Un record se "
              "corrige por enmienda o queda superado con puntero; el historial no se "
              "poda.")
+    if (config.root / relative).resolve() in plans:
+        fail(f"{relative}: documento de plan — **record** desde la spec v0.4 (§4.5): "
+             "es la comisión que un gate ratificó y que el `plan:` de un protocol "
+             "apunta como procedencia. Se supersede con un plan nuevo, no se borra.")
+    if roster.is_ecosystem(Path(relative).name):
+        fail(f"{relative}: archivo del ecosistema (§4.5) — su dueño está **fuera del "
+             "framework** y el ciclo de vida de borrado no lo alcanza. Retirarlo es "
+             "decisión de quien licencia o cita el repo, no de este pase.")
     if relative in roster.ROOT_ROSTER or relative == config.relative(config.constitution):
         fail(f"{relative}: está en el roster §4.5 — borrarlo no es normalizar, es "
              "dejar al repo sin una de sus casas declaradas.")
@@ -332,11 +346,12 @@ def mode_retire(config, argv: list[str]) -> None:
              "aplica y dónde vive lo que lo reemplaza.")
 
     record_patterns = records.patterns(config)
+    plans = roster.plan_documents(config)
     tracked = set(inventory.tracked(config.root))
     targets: list = []
     for raw in positional:
         for relative in expand(config, raw, tracked):
-            guard_deletion(config, relative, record_patterns)
+            guard_deletion(config, relative, record_patterns, plans)
             if relative not in targets:
                 targets.append(relative)
 

@@ -22,7 +22,7 @@ una página:
 
 | Sección | Qué contesta |
 |---|---|
-| **Roster §4.5** | qué archivo repo-level está en la tabla, cuál está en la cola de enmiendas de la spec y cuál está **fuera** |
+| **Roster §4.5** | qué archivo repo-level está en la tabla —contando el documento de plan y los archivos del ecosistema, que tienen fila— y cuál está **fuera** |
 | **Puntero delgado** | qué archivo de entrada engordó hasta albergar reglas de otra casa |
 | **Documentos a clasificar** | todo markdown fuera de las casas del framework, con su peso y sus commits |
 | **Monolitos** | el log append-heavy que concentra el eco |
@@ -97,8 +97,11 @@ anotación de sidecar. El corpus solo-vigente es **precondición estructural** d
 payload (spec §8.3): un corpus con tres versiones sin vigente declarado produce
 eco por construcción, y `doctor` lo reporta.
 
-Consumido el gate: `registry add gates --gate map-ratification --decision «…»
---record_out «…»`.
+Consumido el gate: `registry add gates --gate current-adjudication --decision
+«vigente de <concepto>: <cuál>, entre <n> versiones» --record_out «filas de
+supersesión de lo superado»`. Es el gate de **adjudicación de vigentes** de spec
+§11.1 y `current-adjudication` es el nombre del kit: la spec no fija tokens de
+gate, y todo gate consumido deja su fila (§7.4).
 
 ## 5. Retención declarada y borrado
 
