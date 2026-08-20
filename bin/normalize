@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""`/normalize` — el inventario de un repo existente y sus dos pases que escriben.
+
+Un edge case no se le agrega al framework: se **normaliza** hacia él (principio
+de diseño #1). Este comando toma el repo en el estado en que esté y produce el
+insumo del flujo: qué hay, qué está fuera del roster §4.5, qué archivo de
+entrada engordó hasta ser segunda casa, qué monolito concentra el eco, qué
+épocas conviven y qué documento no enlaza nadie.
+
+  normalize [inventory]                   censo read-only. No escribe nada.
+  normalize freeze PATH… [--apply]        congela un legado EN SU LUGAR
+  normalize retire PATH… --reason R [--apply]   borra evergreen muerto
+
+**El inventario no clasifica ni adjudica**: describe. La clase de cada documento
+(record · evergreen · efímero · hard-doc) y la elección del vigente entre tres
+arquitecturas simultáneas son juicio, y su autoridad es el gate humano — ante
+tres candidatos, ningún mecanismo elige solo. Los dos pases que escriben exigen
+`--apply` con el inventario a la vista, y dejan su entrada en el registry de
+migraciones (spec §9.2).
+
+**La documentación dura jamás se borra** (spec §2.3): es la única clase exenta
+del ciclo de vida de borrado de cualquier flujo, incluido este. Un record
+tampoco: no se borra nunca, y el pase se planta antes de proponerlo.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import VERSION
+from kitlib import config as kitconfig
+from kitlib import inventory, passes, records, roster
+from kitlib import registry as reg
+from kitlib import registrystore as store
+from kitlib.config import CONFIG_NAME
+from kitlib.errors import fail
+from kitlib.passes import Git
+
+COMMAND = "normalize"
+USAGE = ("uso: normalize [inventory] | normalize freeze PATH… [--apply] | "
+         "normalize retire PATH… --reason «retención declarada» [--apply]")
+PATH_WIDTH = 62
+
+
+def registry_paths(config) -> list:
+    """El rastro que todo pase commitea junto con su cambio (spec §9.2)."""
+    return [config.relative(store.data_path(config, reg.MIGRATIONS)),
+            config.relative(store.view_path(config, reg.MIGRATIONS))]
+
+
+# ——— inventario ———
+
+def print_roster(config, findings: list) -> list:
+    print("## Roster de archivos repo-level (spec §4.5)\n")
+    print("| Archivo | Veredicto | Detalle |")
+    print("|---|---|---|")
+    verdicts = {roster.ROSTER: "en el roster", roster.QUEUED: "cola de enmiendas",
+                roster.OFF_ROSTER: "**FUERA del roster**"}
+    for item in findings:
+        print(f"| `{item.path}` | {verdicts[item.verdict]} | {item.detail} |")
+    print("\n**La taxonomía es cerrada:** un archivo repo-level que no esté en la "
+          "tabla no es «una excepción» — o se mueve a su casa, o entra por enmienda "
+          "de la spec con su fila declarada.\n")
+    return [item for item in findings if item.verdict == roster.OFF_ROSTER]
+
+
+def print_thin_pointers(problems: list) -> None:
+    print("## Prueba del puntero delgado (spec §4.5)\n")
+    print("*«Si se borra un archivo de entrada, no se pierde ninguna regla — solo el "
+          "atajo para encontrarla.»*\n")
+    if not problems:
+        print("Los archivos de entrada apuntan; no albergan.\n")
+        return
+    for problem in problems:
+        print(f"- {problem}")
+    print()
+
+
+def print_documents(config, docs: list) -> None:
+    print(f"## Documentos a clasificar ({len(docs)})\n")
+    if not docs:
+        print("Ninguno fuera de las casas del framework.\n")
+        return
+    print("| Documento | Bytes | Commits |")
+    print("|---|---|---|")
+    for doc in docs:
+        print(f"| `{doc.relative[:PATH_WIDTH]}` | {doc.size} | {doc.commits} |")
+    print("\nCada uno pertenece a **exactamente una** clase (spec §4.1): record "
+          "(append-only, jamás se edita) · evergreen (una casa por hecho, se BORRA "
+          "al morir) · efímero (jamás debió ser archivo) · hard-doc (jamás se "
+          "borra). La clase la decide el juicio, no este censo.\n")
+
+
+def print_monoliths(monoliths: list) -> None:
+    print("## Monolitos append-heavy (triturado)\n")
+    print(f"*Umbral: ≥ {inventory.MONOLITH_BYTES} bytes **y** ≥ "
+          f"{inventory.MONOLITH_COMMITS} commits.*\n")
+    if not monoliths:
+        print("Ninguno.\n")
+        return
+    for doc in monoliths:
+        print(f"- `{doc.relative}` — {doc.size} bytes en {doc.commits} commits")
+    print("\nUn log append-heavy que ningún agente puede dejar de leer es **eco por "
+          "frecuencia**: la corrección se agrega y el texto viejo permanece. El "
+          "triturado lo parte en dos — su contenido vigente va al registry como "
+          "**datos** (`registry add`) y a records individuales, y el original queda "
+          "**congelado en su lugar** (`normalize freeze`), fuera del contexto de "
+          "lectura y sin perder un byte.\n")
+
+
+def print_groups(title: str, groups: dict, note: str) -> None:
+    print(f"## {title}\n")
+    if not groups:
+        print("Ninguno.\n")
+        return
+    for name, paths in groups.items():
+        print(f"- **{name}** → {', '.join(f'`{path}`' for path in paths)}")
+    print(f"\n{note}\n")
+
+
+def print_orphans(orphans: list) -> None:
+    print("## Huérfanos — documentos que nadie enlaza\n")
+    if not orphans:
+        print("Ninguno.\n")
+        return
+    for doc in orphans:
+        print(f"- `{doc.relative}`")
+    print("\n*Alcanzable* incluye findings y registry: lo que sigue acá no lo cita "
+          "nadie. Un huérfano es evergreen muerto (se borra, con retención "
+          "declarada) o un record sin casa (se le da la suya) — el gate lo "
+          "adjudica.\n")
+
+
+def print_hygiene(notes: list) -> None:
+    print("## Higiene operativa — **fuera del alcance documental**\n")
+    if not notes:
+        print("Nada que señalar.\n")
+        return
+    for note in notes:
+        print(f"- {note}")
+    print("\nSe nombra y no se toca: normalizar documentación no es limpiar el "
+          "entorno local.\n")
+
+
+def mode_inventory(config, argv: list[str]) -> None:
+    if argv:
+        fail(USAGE)
+    print(f"# normalize — inventario de `{config.root.name}`\n")
+    print(f"Idioma de prosa del repo: `{config.language}` · kit {VERSION}\n")
+
+    findings = roster.census(config)
+    off_roster = print_roster(config, findings)
+    thin = roster.thin_pointer_problems(config)
+    print_thin_pointers(thin)
+
+    docs = inventory.documents(config, roster.covered(config, findings))
+    print_documents(config, docs)
+    monoliths = inventory.monoliths(docs)
+    print_monoliths(monoliths)
+
+    duplicates = inventory.duplicate_basenames(docs)
+    print_groups("Épocas como carpetas — mismo nombre en carpetas distintas",
+                 duplicates,
+                 "Superseder *carpetas* en vez de *documentos* deja las viejas en el "
+                 "contexto de cualquier agente que lea la carpeta padre. La "
+                 "supersesión del framework es **por archivo**, con su fila en el "
+                 "registry y su puntero al vigente (spec §0.2 #2).")
+
+    families = inventory.version_families(docs)
+    print_groups("Familias de versión sin vigente declarado", families,
+                 "Versionar en el nombre del archivo no es superseder: sin fila en "
+                 "el registry no hay vigente, y un corpus con tres versiones "
+                 "conviviendo produce eco por construcción (spec §8.3).")
+
+    orphans = inventory.orphans(config, docs)
+    print_orphans(orphans)
+    print_hygiene(inventory.hygiene(config))
+
+    pending = (len(off_roster) + len(thin) + len(monoliths) + len(duplicates)
+               + len(families) + len(orphans))
+    print("## Qué sigue\n")
+    for step in next_steps(config, pending):
+        print(f"- {step}")
+    sys.exit(1 if pending else 0)
+
+
+def next_steps(config, pending: int) -> list[str]:
+    if not pending:
+        return ["Nada que adjudicar: el repo ya está en formato vigente fuera del "
+                "bronze. Correr `doctor` para el chequeo de integridad."]
+    return [
+        "**Clasificar** cada documento de la tabla en su clase (§4.1) y darle su "
+        "casa. Lo que no tiene consumidor ni momento de lectura declarados no es "
+        "un archivo: es chat (§4.2).",
+        "**Adjudicar los vigentes** — GATE HUMANO. Ante versiones o arquitecturas "
+        "simultáneas ningún mecanismo elige solo; el humano decide y la "
+        "supersesión se declara (`registry add supersessions`).",
+        "**Triturar los monolitos**: contenido vigente al registry como datos + "
+        "records individuales; el original, `normalize freeze --apply`.",
+        "**Declarar la retención y borrar** lo evergreen muerto: "
+        "`normalize retire … --reason «…» --apply`. La documentación dura está "
+        "exenta y los records no se borran nunca.",
+        "**Regenerar los derivados** (`derive-status`, `derive-index`) y cerrar con "
+        "`doctor`.",
+        f"**Encadenar `/migrate`** para la dimensión de idioma y nomenclatura: son "
+        f"operaciones distintas y este flujo no las hace (la prosa de este repo va "
+        f"en `{config.language}`).",
+    ]
+
+
+# ——— freeze: congelar un legado EN SU LUGAR ———
+
+def with_immutable_paths(text: str, paths: list) -> str:
+    """Reescribe `records.extra_immutable_paths` conservando comentarios y orden."""
+    lines, out, index, replaced = text.splitlines(), [], 0, False
+    while index < len(lines):
+        line = lines[index]
+        if line.strip().startswith("extra_immutable_paths:"):
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f"{indent}extra_immutable_paths:" + ("" if paths else " []"))
+            out.extend(f"{indent}  - {item}" for item in paths)
+            index += 1
+            while index < len(lines) and lines[index].strip().startswith("- "):
+                index += 1
+            replaced = True
+            continue
+        out.append(line)
+        index += 1
+    if not replaced:
+        fail(f"{CONFIG_NAME}: no encuentro `records.extra_immutable_paths` — "
+             "correr `kit-init` antes de congelar nada")
+    return "\n".join(out) + "\n"
+
+
+def mode_freeze(config, argv: list[str]) -> None:
+    positional, flags = passes.parse_flags(argv, {"--apply": False}, USAGE)
+    if not positional:
+        fail(USAGE)
+    declared = list(config.extra_immutable_paths)
+    targets = []
+    for raw in positional:
+        path = (config.root / raw).resolve()
+        if not path.exists():
+            fail(f"{raw}: no existe")
+        relative = config.relative(path)
+        if relative in declared:
+            print(f"`{relative}`: ya está declarado como record congelado — nada que hacer.")
+            continue
+        targets.append(relative)
+    if not targets:
+        return
+
+    print("## Congelar en su lugar (spec §9.1, §4.4)\n")
+    for relative in targets:
+        print(f"- `{relative}` → record inmutable, leído y citado, **jamás reescrito**")
+    print("\nCongelar no mueve ni edita: declara la ruta en "
+          "`records.extra_immutable_paths` y la guarda de inmutabilidad la protege "
+          "desde el próximo commit. El monolito sale del contexto de lectura sin "
+          "perder un byte — su contenido vigente se extrae al registry como datos y "
+          "a records individuales, que es la otra mitad del triturado.\n")
+
+    if not flags["--apply"]:
+        print("(dry-run) Es opt-in del humano: re-corré con `--apply`.")
+        return
+
+    git = Git(config.root)
+    git.require_clean_index()
+    path = config.root / CONFIG_NAME
+    path.write_text(with_immutable_paths(path.read_text(encoding="utf-8"),
+                                         declared + targets), encoding="utf-8")
+    passes.record_pass(
+        config, COMMAND, "normalize freeze",
+        f"{len(targets)} ruta(s) legada(s) declarada(s) como record congelado en su lugar",
+        targets,
+        "`records.extra_immutable_paths` declara las rutas y la guarda de "
+        "inmutabilidad rechaza desde ahora modificarlas, borrarlas o renombrarlas; "
+        "el contenido no se tocó",
+        "el contenido del legado NO se editó ni se movió: congelar es declarar, no "
+        "reescribir. Extraer su contenido vigente al registry y a records "
+        "individuales es trabajo aparte, con su propio gate", VERSION)
+    committed = [CONFIG_NAME] + registry_paths(config)
+    passes.commit(git, committed,
+                  f"chore: normalize freeze — {len(targets)} ruta(s) legada(s) como record")
+
+
+# ——— retire: borrar evergreen muerto ———
+
+def guard_deletion(config, relative: str, record_patterns: tuple) -> None:
+    """Lo que este pase JAMÁS borra. Se planta antes de proponerlo, no después."""
+    if relative.startswith(config.data["paths"]["hard_docs"].rstrip("/") + "/"):
+        fail(f"{relative}: documentación dura — **jamás se borra** (spec §2.3). Es la "
+             "única clase exenta del ciclo de vida de borrado de cualquier flujo, "
+             "incluido este.")
+    if records.is_record(relative, record_patterns):
+        fail(f"{relative}: record — no se borra nunca (spec §4.1). Un record se "
+             "corrige por enmienda o queda superado con puntero; el historial no se "
+             "poda.")
+    if relative in roster.ROOT_ROSTER or relative == config.relative(config.constitution):
+        fail(f"{relative}: está en el roster §4.5 — borrarlo no es normalizar, es "
+             "dejar al repo sin una de sus casas declaradas.")
+    if relative.startswith(config.data["paths"]["registry"].rstrip("/") + "/"):
+        fail(f"{relative}: registry — el set es cerrado y sus filas no se borran "
+             "(spec §12 G6).")
+
+
+def expand(config, raw: str, tracked: set) -> list:
+    """Un archivo o un árbol → sus rutas **trackeadas**.
+
+    Solo lo trackeado: retirar es `git rm`, y lo que git no conoce no lo borra
+    este flujo — ni lo debería, porque su historial no está en ningún lado.
+    """
+    path = (config.root / raw).resolve()
+    if not path.exists():
+        fail(f"{raw}: no existe")
+    candidates = [path] if path.is_file() else sorted(
+        item for item in path.rglob("*") if item.is_file())
+    found = [config.relative(item) for item in candidates
+             if config.relative(item) in tracked]
+    if not found:
+        fail(f"{raw}: sin archivos trackeados que retirar (lo no trackeado no lo "
+             "borra este flujo: su historial no vive en ningún lado)")
+    return found
+
+
+def mode_retire(config, argv: list[str]) -> None:
+    positional, flags = passes.parse_flags(argv, {"--apply": False, "--reason": None},
+                                           USAGE)
+    if not positional:
+        fail(USAGE)
+    if not flags["--reason"]:
+        fail("`--reason` es obligatorio: un borrado sin **retención declarada** es "
+             "una pérdida, no una normalización. Qué se retira, por qué ya no "
+             "aplica y dónde vive lo que lo reemplaza.")
+
+    record_patterns = records.patterns(config)
+    tracked = set(inventory.tracked(config.root))
+    targets: list = []
+    for raw in positional:
+        for relative in expand(config, raw, tracked):
+            guard_deletion(config, relative, record_patterns)
+            if relative not in targets:
+                targets.append(relative)
+
+    counts = inventory.commit_counts(config.root)
+    print("## Retiro de evergreen muerto (spec §4.1)\n")
+    print(f"**Retención declarada:** {flags['--reason']}\n")
+    print("| Archivo | Bytes | Commits |")
+    print("|---|---|---|")
+    for relative in targets:
+        path = config.root / relative
+        print(f"| `{relative[:PATH_WIDTH]}` | {path.stat().st_size} | "
+              f"{counts.get(relative, 0)} |")
+    print("\nUn evergreen muerto **se borra, no se archiva**: el historial ya vive en "
+          "git, y una carpeta de archivo es una época más conviviendo en el contexto "
+          "de todo agente que lea la carpeta padre.\n")
+
+    if not flags["--apply"]:
+        print("(dry-run) Es opt-in del humano, con el inventario a la vista: re-corré "
+              "con `--apply`.")
+        return
+
+    git = Git(config.root)
+    git.require_clean_index()
+    git("rm", "-q", "--", *targets)
+    passes.record_pass(
+        config, COMMAND, "normalize retire",
+        f"{len(targets)} documento(s) evergreen muerto(s) retirado(s)",
+        targets,
+        f"retención declarada: {flags['--reason']}; el contenido sigue en el "
+        "historial de git — el borrado no destruye evidencia, retira una casa que "
+        "ya no describe nada verdadero",
+        "records, documentación dura, archivos del roster §4.5 y el registry quedan "
+        "fuera por contrato: el pase se planta antes de proponerlos", VERSION)
+    # `git rm` ya dejó los borrados en el índice: re-agregarlos fallaría, porque
+    # la ruta ya no existe en el worktree. Solo falta staged el rastro.
+    passes.commit(git, registry_paths(config),
+                  f"chore: normalize retire — {len(targets)} documento(s) muerto(s)")
+
+
+MODES = {"inventory": mode_inventory, "freeze": mode_freeze, "retire": mode_retire}
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    mode = argv[0] if argv and not argv[0].startswith("--") else "inventory"
+    rest = argv[1:] if argv and argv[0] in MODES else argv
+    if mode not in MODES:
+        fail(USAGE)
+    MODES[mode](kitconfig.load(), rest)
+
+
+if __name__ == "__main__":
+    main()
