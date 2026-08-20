@@ -46,6 +46,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / ".inception-kit" / "lib"))
 
 from kitlib import config as kitconfig                       # noqa: E402
+from kitlib import records as recordpaths                    # noqa: E402
 from kitlib import registry as reg                           # noqa: E402
 from kitlib import registrystore as store                    # noqa: E402
 from kitlib.config import CONFIG_NAME, RATIFIED_KEYS, STATUS_ORDER   # noqa: E402
@@ -89,31 +90,6 @@ def staged_changes() -> list[Change]:
                               target_blob=fields[3], path=parts[0],
                               target=parts[1] if len(parts) > 1 else None))
     return changes
-
-
-def record_patterns(config) -> tuple[str, ...]:
-    """Backstop por rutas: protege las CASAS REALES donde el material aterriza.
-
-    Con el `inbox` fuera del contrato (spec §2.6), lo que la guarda protegía en
-    él lo protege ahora en el destino: la carpeta de la unidad, la casa del
-    bronze sin unidad y la de la documentación dura (§4.4). Un `inbox/` legado
-    sigue protegido mientras exista, declarado en `extra_immutable_paths`.
-    """
-    investigations = re.escape(config.data["paths"]["investigations"])
-    decisions = re.escape(config.data["paths"]["decisions"])
-    evidence = re.escape(config.data["paths"]["evidence"])
-    hard_docs = re.escape(config.data["paths"]["hard_docs"])
-    patterns = [
-        rf"^{investigations}/[^/]+/raw/",
-        rf"^{investigations}/[^/]+/0[123]-(?:report|findings|sources)(?:\.v\d+)?\.md$",
-        rf"^{investigations}/[^/]+/payload\.md$",
-        rf"^{decisions}/adr-.+\.md$",
-        rf"^{evidence}/",
-        rf"^{hard_docs}/",
-    ]
-    patterns.extend(rf"^{re.escape(str(extra).rstrip('/'))}(?:/|$)"
-                    for extra in config.extra_immutable_paths)
-    return tuple(patterns)
 
 
 def frontmatter_and_body(text: str) -> tuple[dict, str]:
@@ -244,7 +220,7 @@ def main() -> None:
     if not head_exists():
         return  # primer commit: nada commiteado ⇒ nada es record todavía
     config = kitconfig.load(REPO)
-    records = record_patterns(config)
+    records = recordpaths.patterns(config)
     protocol_re = re.compile(
         rf"^{re.escape(config.data['paths']['investigations'])}/[^/]+/00-protocol\.md$")
     schemas = {config.relative(store.data_path(config, schema)): schema
