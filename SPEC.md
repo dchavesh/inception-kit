@@ -1,16 +1,16 @@
 ---
 id: inception-framework-spec
 type: constitution
-version: 0.3
-status: ratified — 2026-08-19 (gate humano: Sección A confirmada, Sección B aprobada completa)
-date: 2026-08-19
-supersedes: inception-framework-v0.2
+version: 0.4
+status: proposed — pendiente de ratificación humana
+date: 2026-08-20
+supersedes: inception-framework-v0.3
 home: inception-kit (este repo)
 consumer: toda sesión, humano o script que opere bajo el inception-framework
 reading-moment: antes de crear, cerrar o migrar cualquier artefacto del framework
 ---
 
-# Inception Framework — spec v0.3
+# Inception Framework — spec v0.4
 
 **Propósito.** Convertir una idea cruda en una base de desarrollo respaldada por
 evidencia: un programa de investigación ejecutado por sesiones de IA, coordinado
@@ -40,22 +40,36 @@ Mientras el `status:` es `proposed`, el documento todavía es la propuesta que e
 acta somete a ratificación: una enmienda ratificada en conversación **antes** del
 gate entra a esta misma versión — no la bifurca ni la bumpea, porque no hay nada
 vigente que superar. A cambio, no entra en silencio: se redacta en su sección, se
-registra en la tabla de enmiendas pre-gate (§14.3) y se agrega como ítem con
-alternativa descartada al acta (Sección B.4). Ratificado el acta, la versión
+registra en la tabla de enmiendas pre-gate de la versión en curso y se agrega
+como ítem con alternativa descartada al acta. Ratificado el acta, la versión
 queda congelada y todo cambio posterior vuelve al protocolo duro.
 
-**Qué es v0.3.** Esta versión supersede a la v0.2 y la reemplaza como
-constitution vigente: es autocontenida, y ningún lector necesita la v0.2 para
-operar. Se construyó bajo una regla dura de alcance: **v0.3 = v0.2 arrastrada
-sin cambio + los 10 ítems de la Fase 2 del plan de mejoras vigente + las
-enmiendas pre-gate ratificadas el 2026-08-19 (§14.3)**. Todo párrafo normativo de
-este documento traza a uno de los tres orígenes; las tablas de trazabilidad de
-§14 lo hacen auditable. Nada nació por iniciativa del redactor.
+**Esa regla no es privativa de esta spec.** Es la regla de la **clase
+constitution**, y por eso desde la v0.4 vive en §4.3 y gobierna también la
+`constitution.md` de un proyecto: mientras su `status:` es `draft` o `proposed`
+no hay nada vigente que superar, y ratificarla entra a su propia v1.
+
+**Qué es v0.4.** Esta versión supersede a la v0.3 y la reemplaza como
+constitution vigente: es autocontenida, y ningún lector necesita la v0.3 para
+operar. Se construyó bajo una regla dura de alcance: **v0.4 = v0.3 ratificada
+arrastrada sin cambio + los 10 ítems del batch v0.4 del plan de mejoras vigente**
+— ocho enmiendas encoladas por las sesiones de implementación, la canonización de
+los cuatro flujos que el kit 0.4.0 ya implementa, y las adjudicaciones de tooling
+ya aceptadas. Todo párrafo normativo de este documento traza a §14.1, §14.2,
+§14.3 o §14.5; las tablas de trazabilidad de §14 lo hacen auditable. Nada nació
+por iniciativa del redactor: **la agenda es cerrada**, y lo que la redacción
+encontró fuera de ella se anota en el acta, no se escribe acá.
+
+**Qué NO es v0.4.** No es un rediseño. Los cuatro flujos que §10.2 canoniza
+existen, están implementados en el kit 0.4.0 y están validados: la spec
+**describe la práctica**, no la propone. Donde la letra y la práctica divergen,
+eso es una laguna declarada en el acta — jamás una mejora colada por la puerta de
+atrás.
 
 **Estado.** `proposed`. Esta spec **no está en vigor** hasta que el humano
-ratifique el ACTA DE GATE del final. Las reglas que exigen migración de tooling
-declaran además su **regla de activación** (§1.6, §9.4): la spec declara, el kit
-implementa después.
+ratifique el ACTA DE GATE del final; hasta entonces rige la v0.3. Las reglas que
+exigen migración de tooling declaran además su **regla de activación** (§1.6,
+§9.4): la spec declara, el kit implementa después.
 
 ---
 
@@ -371,6 +385,22 @@ re-derivan desde bronze **sin re-ejecutar investigación**.
 **Consentimiento y datos personales viven en el sidecar desde el diseño**, no
 en la prosa: la legislación de datos personales aplica al propio repo.
 
+**La casa de cada capa.** El bronze tiene dos casas posibles según §2.6 —
+`<unit>/raw/` cuando pertenece a una unidad, `<research>/evidence/<class>/`
+cuando tiene clase pero no pertenece a ninguna—; **el silver y el gold tienen
+una sola: la carpeta de una unidad** (`01-report.md` y `02-findings.md`, §5).
+No existe un silver fuera de una unidad, porque no existe un `02-findings` fuera
+de una unidad (principio de diseño #5).
+
+**Destilar bronze sin unidad no lo muda de casa.** Cuando lo que se destila vive
+en `evidence/<class>/`, **una unidad aloja la destilación** — cuál, lo decide el
+humano, porque elegirla es juicio— y el bronze **se queda donde está**: la unidad
+lo cita por **ruta y `sha256`**, no se lo lleva. Mover ese bronze a `raw/` es una
+operación distinta, es opt-in del humano y es de la migración por capas (§9.1);
+la destilación jamás la dispara sola. Así el material que sirve a más de una
+unidad no necesita duplicarse ni elegir dueño, y el `sha256` que lo hace
+auditable sigue apuntando a un único archivo.
+
 ### 2.3 Documentación dura (`hard-doc`)
 
 - **Jamás se borra.** Es la única clase exenta del ciclo de vida de borrado de
@@ -566,6 +596,29 @@ evergreen con **protocolo de enmienda duro**: toda modificación sube `version:`
 agrega fila al changelog y pasa por gate humano. Es la única forma de evergreen
 cuyo cambio no es libre.
 
+**El protocolo duro gobierna un documento EN VIGOR.** Mientras el `status:` de
+una constitution es `draft` o `proposed`, el documento todavía es **la propuesta
+que el gate va a ratificar**: editarlo —**incluido ratificarlo**— entra a esa
+misma versión y **no la bumpea, porque no hay nada vigente que superar**.
+Consumido el gate, la versión queda congelada y todo cambio posterior vuelve al
+protocolo duro. La regla vale para las dos constitutions de la clase: esta spec
+la aplica sobre sí misma (§"Cómo se lee y cómo se enmienda este documento") y la
+`constitution.md` de un proyecto la aplica sobre su v1.
+
+Corolario sobre el **bloque ratificado** de la config (§12, G4): pre-gate, esos
+valores **se ratifican CON la constitution** en el mismo acto, así que cambiarlos
+mientras el documento no está en vigor tampoco exige bump. El gate que los
+ratifica es el mismo que ratifica el borrador.
+
+**La regla falla del lado seguro.** Si la constitution todavía no existe en el
+historial, no hay nada vigente que superar. Si existe y **no declara `status:`**,
+se la trata como **vigente** y rige el protocolo duro: la ausencia de declaración
+jamás compra una excepción.
+
+*Por qué está escrito:* sin esta regla, ratificar una v1 exige inventar una v2
+que nunca existió — el flujo de entrada de un proyecto nuevo (§10.2,
+`/inception`) no puede cerrar su primer gate.
+
 ### 4.4 Enforcement
 
 El enforcement por clase **SE SUMA** al enforcement por rutas de la guarda de
@@ -598,9 +651,12 @@ lector, momento de lectura y clase (§4.1), como exige la regla chat-primero
 | `CLAUDE.md` (raíz) | cómo se opera este repo: qué skills existen, qué está prohibido, dónde están las reglas | sesión de agente | al iniciar toda sesión | evergreen — **puntero delgado** |
 | `framework.config.yaml` (raíz) | el contrato de este repo con el kit y su **ancla** (rutas, `ids`, `runs`, `horizons`, `metrics`, `context`, `language`, `kit_version`) | scripts del kit y guarda de integridad | en cada corrida de tooling | evergreen; su **bloque ratificado** cambia solo por enmienda (§12, G4) |
 | `<research>/constitution.md` | gobernanza del repo: supuestos refutables, dominio, techo de gasto, umbrales de QA, disparadores | humano en los gates; el coordinador al comisionar | antes de todo gate y de congelar unidades | evergreen **clase constitution** (§4.3) |
-| `<registry>/*.md` | la memoria del programa: los ocho registries que son record (metrics, ingest-log, supersessions, migrations, qa-audits, gates, requirements, conflicts) | coordinador, síntesis, auditoría | al cerrar, citar o auditar | **según §12, G6** — append-only o marcable |
-| `<registry>/STATUS.md` | tablero de estado del programa; el noveno registry y el único que no es record | humano y coordinador | al planificar y al lanzar | **vista derivada** — regenerable, jamás editada a mano, jamás autoritativa (§12, G6) |
-| índice puerta-de-entrada | `id → slug → objetivo en una línea → status` (§1.2) | quien necesita saber sin abrir cada unidad | al orientarse en el corpus | **vista derivada generada** — la genera el kit; hoy no existe (preguntas al final, #1) |
+| documento de **plan** | la comisión de un conjunto de unidades: mapa (Parte I) + **briefing** (Parte II) + una sección por unidad (Parte III). Lo apunta el campo `plan:` del protocol (§12, G1) | el coordinador al comisionar y al lanzar; el humano en el gate del mapa | al ratificar el mapa y al armar cada payload | **record** — fechado y no editable: la comisión que se ratificó no cambia después. Un plan nuevo supersede al anterior (§0.2 #2) |
+| `<registry>/data/*` | **los datos** de los ocho registries que son record (metrics, ingest-log, supersessions, migrations, qa-audits, gates, requirements, conflicts) | los scripts del kit; la auditoría | al escribir una fila, al renderizar y al auditar | **record** — régimen por registry **según §12, G6**: append-only o marcable. Es la fuente; se escribe solo por la puerta del kit, jamás a mano. La casa la norma esta spec; el formato lo elige el kit (§12, G6) |
+| `<registry>/*.md` | **la vista** de cada uno de esos ocho registries, renderizada desde sus datos | coordinador, síntesis, auditoría, humano | al cerrar, citar o auditar | **vista derivada** — regenerable, jamás editada a mano, jamás autoritativa (§12, G6) |
+| `<registry>/STATUS.md` | tablero de estado del programa; el noveno registry y el único sin datos propios | humano y coordinador | al planificar y al lanzar | **vista derivada** — deriva de los protocols; jamás editada a mano, jamás autoritativa (§12, G6) |
+| `INDEX.md` (raíz) | el **índice puerta-de-entrada**: `id → slug → objetivo en una línea → status`, más decisiones vigentes, conflictos abiertos, síntesis vigente y dónde vive cada clase de cosa (§1.2) | quien necesita saber sin abrir cada unidad | al orientarse en el corpus | **vista derivada generada** — la genera el kit; **puntero delgado**: ninguna regla vive ahí |
+| `LICENSE` · `NOTICE` · `CITATION.cff` (raíz) | los archivos que **exige el ecosistema**, no el framework: términos de uso, atribuciones y forma de citar el repo | quien consume, redistribuye o cita el repo desde afuera | antes de reutilizar o citar | evergreen — **fuera del KB**: no portan reglas del framework, no son citables como evidencia y ninguna capa de la cadena de evidencia los recorre |
 | `SPEC.md` (en el kit) | esta spec: la constitution del framework | toda sesión, humano o script que opere bajo el framework | antes de crear, cerrar o migrar cualquier artefacto | evergreen **clase constitution**; **vive en el kit y en ningún repo consumidor** — un repo la referencia por la versión de kit que declara su config |
 
 Los archivos de una unidad (`00-protocol`, `payload`, `raw/`, `01-report`,
@@ -610,7 +666,29 @@ dentro de la carpeta de su unidad (principio de diseño #5).
 Tampoco entra el **tooling que el kit instala** —las skills vendorizadas, el hook
 de integridad y su shim—: es maquinaria versionada por el kit, no conocimiento
 del repo. No aloja reglas, se reemplaza en cada bump, y por eso ni ocupa fila ni
-abre la taxonomía.
+abre la taxonomía. Lo mismo vale para los archivos de configuración de
+herramientas ajenas (`.gitignore`, `.editorconfig` y sus pares): son del entorno,
+no del framework.
+
+**Por qué los archivos del ecosistema ocupan fila y no una excepción.** `LICENSE`,
+`NOTICE` y `CITATION.cff` no los pide el framework: los pide el mundo donde el
+repo vive, y aparecen en su raíz sin que ninguna regla de esta spec los haya
+convocado. Con la taxonomía cerrada, un archivo sin fila es una violación — así
+que un repo que hace lo correcto legalmente quedaría en falta con su propia
+constitution. La fila resuelve las dos mitades: **existen legítimamente** y
+**están fuera del KB**. No son records de nada, no entran a la cadena de
+evidencia, no se citan como fuente, y el ciclo de vida de borrado no los alcanza
+porque su dueño no es el framework. La lista de la fila es **ilustrativa de la
+categoría, no exhaustiva**: lo que la define es el criterio —exigido por el
+ecosistema, sin regla del framework adentro—, y un archivo que pretenda entrar
+por esta puerta portando reglas del repo no es un archivo del ecosistema: es una
+segunda casa con disfraz.
+
+**Por qué el documento de plan es record.** Es la comisión que un gate humano
+ratificó, y el `plan:` de cada protocol la apunta como procedencia de lo que esa
+unidad recibió (§12, G1): editarlo después cambiaría, retroactivamente, el sobre
+que una sesión ya abrió. Comisionar de nuevo es **un plan nuevo que supersede al
+anterior**, con su fila (§0.2 #2) — jamás una edición del que ya comisionó.
 
 Como esos artefactos de nombre fijo, **los del roster no declaran `class:` en su
 frontmatter**: su clase la fija esta tabla y su consumidor es el framework (§4.2).
@@ -624,7 +702,7 @@ no esté en la tabla no es "una excepción": es una violación que el flujo de
 normalización trata como tal.
 
 **Regla de entrada: el conocimiento vive UNA vez.** Los archivos de entrada
-(`README.md`, `CLAUDE.md`, el índice) son **punteros delgados o vistas
+(`README.md`, `CLAUDE.md`, `INDEX.md`) son **punteros delgados o vistas
 generadas** — jamás segundas casas de una regla. Apuntan a donde la regla vive
 (esta spec, la constitution, la config) y no la repiten, ni siquiera "resumida":
 un resumen es una copia que deriva en silencio (principio de diseño #4,
@@ -646,11 +724,19 @@ no duplicándolo.
   instrucciones escrito a mano es exactamente la segunda casa que la regla de
   entrada prohíbe.
 
-#### Regla de activación
+#### Quién verifica el roster
 
-La spec **norma** el roster; verificarlo (archivo repo-level fuera de la tabla,
-archivo de entrada engordado a segunda casa) es trabajo del chequeo de integridad
-del **kit 0.2.0**, junto con el resto de su bump (§9.4).
+La spec **norma** el roster; verificarlo —archivo repo-level fuera de la tabla,
+archivo de entrada engordado a segunda casa— **no es trabajo del chequeo de
+integridad**, y esa asimetría es deliberada (adjudicada el 2026-08-19). El
+chequeo corre en cada push y tiene que poder fallar sin ambigüedad: censar la
+raíz lo obligaría a asumir filas que esta tabla no declara, y clasificar un
+documento suelto es juicio. Por eso **el chequeo de integridad censa solo el
+registry**, y el censo de la raíz y de `<research>/` vive en el flujo de
+normalización (§10.2, `/normalize`), que **propone y pide gate humano** con un
+humano mirando. La prueba del puntero delgado se **mide** ahí mismo: una línea
+de un archivo de entrada que también vive en la constitution o en la config es
+una segunda casa.
 
 ---
 
@@ -669,7 +755,8 @@ del **kit 0.2.0**, junto con el resto de su bump (§9.4).
 │   └── <binario>.<ext> + <binario>.<ext>.meta.yaml   (sidecar de procedencia)
 ├── 01-report.md            silver
 ├── 02-findings.md          gold — el único que viaja entre unidades
-└── 03-sources.md           bitácora de búsqueda
+├── 03-sources.md           bitácora de búsqueda
+└── retro-lenient-deviations.md   record — solo si el cierre fue lenient (§10.2)
 ```
 
 **Estándar de artefactos.** Qué es cada archivo, en qué capa vive y bajo qué
@@ -683,6 +770,7 @@ régimen:
 | `01-report.md` | silver | record | hallazgos completos validados contra plantilla |
 | `02-findings.md` | gold | record | resumen ≤2 páginas — el único que viaja entre unidades |
 | `03-sources.md` | — | record | bitácora de búsqueda |
+| `retro-lenient-deviations.md` | — | record | **solo en un cierre lenient** (§10.2, `/close` paso 1): la lista completa de lo que no validó, **tal cual la imprimió la validación** —sin resumir y sin maquillar—, y por qué se acepta |
 
 Los reports y findings llevan frontmatter mínimo: `id`, `unit`, `date`.
 
@@ -691,9 +779,30 @@ Los reports y findings llevan frontmatter mínimo: `id`, `unit`, `date`.
   `.vN`, o la base si no hay ninguna.
 - El bronze no textual vive en `raw/` como cualquier otro bronze, con su
   sidecar al lado (§2.2).
+- **El silver y el gold de un bronze sin unidad viven acá también** (§2.2): la
+  unidad que aloja la destilación es su casa, y el bronze se queda en
+  `evidence/<class>/` citado por ruta y `sha256`.
 - **El repo no crea carpetas genéricas top-level nuevas.** Los nombres son
   inequívocos entre proyectos que comparten el framework: nada que se llame
   `payloads/`, `docs-varios/` o similar.
+
+**Taxonomía cerrada, igual que §4.5 un nivel más arriba.** La tabla de arriba es
+el **set completo** de lo que puede vivir en la carpeta de una unidad, contando
+sus versiones por supersesión (`<archivo>.vN.md`) y el contenido de `raw/`
+(verbatim de corridas, bronze binario y sus sidecares). Un archivo que no
+corresponde a ninguna fila **no es "una excepción"**: o se mueve a la casa que le
+toca, o entra por enmienda de esta spec con su fila declarada — es la misma
+prueba que §4.5 aplica a la raíz, y el flujo de normalización la trata como
+violación.
+
+*Por qué `retro-lenient-deviations.md` ocupa fila y no un comentario.* Es la
+constancia de que un cierre bajó sus errores a advertencias, y el consumidor es
+quien lea después ese report: sin fila, la desviación viviría como prosa dentro
+de un record —que no se edita— o como memoria de la sesión —que no existe—. Vive
+en la carpeta de la unidad porque es de ella (principio de diseño #5), y declara
+lo que §4.2 le exige a todo archivo: `class`, `consumer`, `reading-moment`,
+`date`. El nombre va en inglés como todo nombre del framework; el cuerpo, en
+`language` (§1.8).
 
 **Rutas del repo.** Las declara `framework.config.yaml` (`paths`), y solo ahí:
 `research`, `investigations`, `registry`, `decisions`, `evidence`, `hard_docs`,
@@ -928,11 +1037,36 @@ rompe la cadena `sha256` que hace auditable cada afirmación que lo cita.
 ofrece con el diff a la vista; el humano decide. Una migración jamás produce
 supersesiones vacías: un record ya canónico no se supersede "por consistencia".
 
-**Reubicar no es reescribir.** Llevar un `inbox/` legado a las casas reales
-(§2.6) mueve archivos sin tocar su contenido: el `sha256` de cada uno sigue
-siendo el mismo — que es justamente lo que hace verificable el pase. Es opt-in
-del humano como cualquier otro, deja el rastro doble de §9.2, y **no habilita
+**Reubicar no es reescribir.** Llevar un `inbox/` legado —o cualquier bronze sin
+casa— a las casas reales (§2.6) mueve archivos sin tocar su contenido: el
+`sha256` de cada uno sigue siendo el mismo, que es justamente lo que hace
+verificable el pase. Es opt-in del humano como cualquier otro y **no habilita
 ninguna edición del verbatim**.
+
+**La reubicación es contrato de esta sección, no una excepción que el tooling
+concede.** La guarda de integridad (§4.4) la acepta **solo** si se cumplen las
+tres condiciones, juntas y verificables sin juicio:
+
+1. **Contenido byte a byte idéntico.** El objeto que sale y el que entra son el
+   mismo: un movimiento con cambios no es una reubicación, es una reescritura de
+   record, y se rechaza como tal.
+2. **Destino en otra casa protegida.** Un record no sale del régimen de record.
+   Mover verbatim a una ruta desprotegida sería sacarlo del contrato por la
+   puerta de atrás, así que el destino tiene que estar bajo las mismas rutas que
+   §4.4 protege.
+3. **Rastro en el MISMO commit.** La entrada en el log de migraciones (§9.2)
+   viaja con el movimiento. Sin rastro no hay pase: un record que aparece en otra
+   ruta sin explicación es indistinguible de una manipulación.
+
+**Que falte una sola, y no es reubicación.** Escritas acá y no en el código,
+ningún tooling futuro puede aflojarlas sin enmendar esta spec — que es
+exactamente lo que se busca: la excepción que se concede una vez, se concede
+siempre.
+
+*Constancia: esto no contradice §12 G3.* La ingesta sigue aterrizando directo en
+la casa de destino, y el cierre sigue sin mover nada. La reubicación no es un
+tramo del flujo normal: es una operación de **migración**, sobre legado, con
+opt-in humano y con las tres condiciones encima.
 
 ### 9.2 Rastro obligatorio
 
@@ -995,22 +1129,214 @@ laguna G3 las tocan.*
 
 ### 10.2 Las pipelines
 
-**`/inception`** — de idea cruda a programa congelado.
+#### Las tres entradas — y no hay más
 
-1. Entrevista de elicitación sobre la idea, por vaga que sea.
-2. Redactar la **constitution** del proyecto: supuestos refutables, dominio,
-   techo de gasto, umbrales de QA y disparadores (§6.3). Los horizontes de
-   caducidad **no se escriben acá**: viven en el bloque ratificado de la config
-   (§12, G4). Se emite como v1 con changelog de enmiendas vacío, estructurada
-   para ser compatible con la constitution del desarrollo dirigido por
-   especificación que la síntesis sembrará. **Gate: el humano ratifica.**
-3. Redactar el **mapa de investigación** (unidades, objetivos, fuera de alcance,
-   `needs`, kill criteria) y el **briefing** del programa como Parte II del plan
-   (§12, G1). **Gate: el humano ratifica — acá es donde el juicio humano se gana
-   el sueldo.**
-4. Scaffold + freeze: scripteado, determinista, aburrido a propósito. El
-   scaffold siembra la config del repo — incluido su `language` (§1.8),
-   confirmado con el humano, no adivinado.
+Un proyecto entra al framework por **exactamente una** de tres puertas, según en
+qué estado está lo que ya existe:
+
+| Entrada | Estado de partida | Qué produce |
+|---|---|---|
+| **`/inception`** | una idea, y nada más | repo sembrado, constitution ratificada y unidades preliminares en `pending` |
+| **`/adopt`** | investigación que **ya se hizo** y nunca tuvo repo | ese corpus adentro del framework, con sus huecos declarados |
+| **`/normalize`** | un repo que **ya existe**, con documentación | ese repo en el formato vigente, con retención declarada |
+
+**El set es cerrado**, y esa es una decisión de diseño, no una casualidad de
+implementación: **un edge case no se le agrega al framework — se normaliza hacia
+él** (principio de diseño #1). Las tres puertas son pipelines de normalización:
+toman el proyecto en el estado en que esté y lo llevan al estado que esta spec
+dicta. Una cuarta puerta sería un dialecto de entrada, y un dialecto de entrada
+produce un repo que solo se parece a los demás.
+
+**Cada puerta reconoce cuándo no es la suya y deriva.** Si al arrancar aparece
+que el estado de partida es otro —hay corpus donde se esperaba una idea, hay un
+repo donde se esperaba una carpeta suelta—, el flujo lo dice y manda al que
+corresponde, en vez de estirarse para cubrirlo.
+
+Tres invariantes gobiernan las tres, y ninguna es negociable:
+
+- **Ninguna porta lógica de negocio.** Las preguntas de un flujo de entrada son
+  generadoras y aclaradoras, y son **las mismas cualquiera sea la idea**: no
+  traen hipótesis, no sugieren mercados, no proponen arquitecturas (principio de
+  diseño #2).
+- **Ninguna congela ni lanza.** Congelar un protocol y lanzar una unidad son
+  órdenes humanas, y siguen siéndolo después de cualquier entrada.
+- **Ninguna elige por el humano.** Ni una clase dudosa, ni cuál versión es la
+  vigente, ni un borrado, ni un número que falta: **se pregunta**, y un default
+  inventado por el flujo es lógica de negocio contrabandeada. Lo que el humano no
+  confirmó, no entra.
+
+**El idioma se fija al principio o no se fija.** Los dos flujos que **crean** el
+primer artefacto —`/inception` y `/adopt`— confirman `language` antes de
+escribirlo (§1.8). El que entra a un repo que **ya tiene prosa** no lo elige:
+ahí el idioma ya está, y cambiarlo es migración por capas encadenada después
+(§9), jamás parte de normalizar.
+
+**`/inception`** — de idea cruda a programa listo para congelar.
+
+1. **Elicitación** sobre la idea, por vaga que sea, con preguntas indiferentes
+   al dominio: qué decisión depende de esto y quién la toma; qué está dado y qué
+   está en disputa; **qué haría que la idea no valga la pena** —son los kill
+   criteria y se **pre-registran acá**, porque un kill criterion inventado al
+   cerrar no es un kill criterion—; dominio y restricciones; techo de gasto y
+   umbrales de QA; disparadores propios (§6.3); y qué **no** es esto. Lo
+   entendido se devuelve y **se pide corrección**: una elicitación que el humano
+   no corrigió es una elicitación que nadie leyó.
+2. **Confirmar `language`** y declararlo en la config (§1.8), antes de escribir
+   el primer artefacto.
+3. **Sembrar el repo**: scripteado, determinista, aburrido a propósito e
+   idempotente. Siembra la config ancla, las casas de §5, los registries de
+   §12 G6 y la guarda de integridad. Los valores del **bloque ratificado**
+   quedan con los defaults del kit — el humano los ratifica, o los cambia, en el
+   gate del paso siguiente (§12, G4).
+4. Redactar la **constitution** del proyecto: supuestos refutables, dominio,
+   techo de gasto, umbrales de QA, disparadores (§6.3) y jerarquía de
+   independencia. Se emite como **v1, en borrador**, con changelog de enmiendas
+   vacío, estructurada para ser compatible con la constitution del desarrollo
+   dirigido por especificación que la síntesis sembrará. Los horizontes de
+   caducidad **no se escriben acá**: viven en el bloque ratificado de la config y
+   la constitution los apunta (§12, G4). **Neutral quiere decir sin la semilla:**
+   la constitution gobierna el repo, no contiene la tesis ni la respuesta
+   esperada, porque lo que gobierna tiene que sobrevivir a que la idea se caiga.
+   **Gate: el humano ratifica el borrador *y* los valores del bloque ratificado
+   tal como están** — pre-gate se ratifican juntos, y por eso ese acto no bumpea
+   nada (§4.3).
+5. **Unidades preliminares** con la convención de fase de §1.3 (`X00` más sufijo:
+   `r00a`, `r00b`, …). Su objetivo es uno solo, y es el que hace de esta fase una
+   fase: **validar la idea — continuar, pivotar o descartar**; cada una lleva por
+   eso kill criteria que resuelven a una de esas tres salidas. Nacen
+   **`clean-room`**: son exploración y son sensibles a falsificación, así que
+   exigen `needs: []` (§8.3). El programa (`X01+`) **no se planifica todavía**:
+   se planifica cuando las preliminares hayan hablado.
+   **Anti-sprawl:** ninguna unidad sin un objetivo que cambie una decisión
+   concreta — si un documento existente ya responde la pregunta, no es una
+   unidad: es una fuente, y entra por la ingesta (§2.6).
+6. Redactar el **mapa** (unidades, objetivos, fuera de alcance, `needs`, kill
+   criteria) y el **briefing** del programa como Parte II del plan (§12, G1;
+   §4.5 le declara su fila). Es la mecánica del flujo de planificación, y vive
+   ahí: `/inception` la delega, no la duplica. **Gate: el humano ratifica — acá
+   es donde el juicio humano se gana el sueldo.**
+7. Cerrar: regenerar los derivados, correr el chequeo de integridad y entregar
+   al humano qué unidades quedaron en `pending`, qué decide cada una y **los
+   gates pendientes en orden**. El freeze es la orden siguiente, y es suya.
+
+**`/adopt`** — investigación que ya se hizo, traída al framework.
+
+**La regla que gobierna todo el flujo: una adopción jamás mejora el pasado.** No
+completa una bitácora de memoria, no inventa un kill criterion que nadie
+pre-registró, no sube una madurez porque el texto suene seguro. Lo que falta se
+declara como limitación: **una ausencia documentada es evidencia; una consulta
+inventada es contaminación** (§7.1).
+
+1. **Inventario del corpus, antes de escribir un archivo**: qué corridas hubo y
+   qué produjo cada una; si se conserva el **verbatim** de cada una (sin
+   verbatim no hay bronze, y sin bronze la afirmación no es auditable); si alguna
+   corrida vio el resultado de otra; si hay versiones del mismo documento
+   conviviendo; qué material es documentación dura (§2.3); y en qué idioma está
+   escrito el corpus. Se devuelve en una tabla y **se pide corrección**.
+2. **Sembrar el repo y declarar el idioma** con el que el corpus **ya está
+   escrito**: adoptar **no traduce** (§1.8).
+3. **El verbatim entra por la puerta, con destino declarado** (§2.6), y ante
+   ambigüedad la ingesta se detiene y pregunta.
+   *Costura declarada — de dónde sale la procedencia.* El log de ingesta registra
+   **llegadas**: fecha, origen externo y desenlace del original. Para lo que
+   efectivamente llega de afuera, la fila nace ahí por construcción. Para el
+   material que **ya vivía dentro del repo no hubo llegada**, y llenar esas
+   columnas sería inventar una ingesta que no ocurrió — eso se **reubica** (§9.1),
+   y reubicar no es ingerir. La procedencia del corpus adoptado queda entonces en
+   tres casas que ya existen, y **la adopción no abre ninguna nueva**: el log de
+   ingesta, el log de migraciones y el sidecar de cada record adoptado.
+4. **Protocols retroactivos.** Un protocol reconstruido **describe la comisión
+   que la corrida efectivamente tuvo**, no la que hubiera sido correcta, y lleva
+   en el cuerpo su marca de reconstrucción con la fecha y la evidencia de la que
+   salió. `runs:` es **cuántas corridas hubo** —si hubo una, es `1`: jamás se
+   completa investigando de más para llegar al default (§3.3)— y `mode:` es lo
+   que pasó. **Los kill criteria que no existieron se declaran vacíos:** es
+   perfectamente legal y es la verdad; inventarlos es lo que no lo es. El `plan:`
+   apunta al documento de plan si existe; si no existe, se redacta uno mínimo con
+   el briefing real que la sesión recibió, o **se declara que no hubo briefing**,
+   que también es un hecho.
+5. **Jerarquía de independencia, declarada y no supuesta**: qué corrida fue
+   réplica ciega y cuál compartió contexto. **El pecado no es el contexto: es el
+   contexto no declarado** (§3.2). Un conjunto `chained` cuenta como **UNA**
+   unidad epistémica y su replicación se declara `n/a` — jamás se le acredita
+   convergencia a dos corridas que se leyeron entre sí. La jerarquía va a la
+   constitution: es la que la síntesis aplicará.
+6. **Cierre retro-lenient — el único lugar donde vive el modo lenient**, y
+   siempre anotado. El corpus artesanal no fue escrito contra la plantilla, así
+   que no la va a pasar. La desviación se anota por escrito en tres lugares y la
+   anotación **es parte del cierre**, no un comentario: el record
+   `<unit>/retro-lenient-deviations.md` (§5), la fila del gate de QA, y la
+   anotación en el **sidecar** del verbatim adoptado (§9.2). **Lo lenient no lava
+   nada:** una afirmación sin fuente sigue siendo `speculative` por definición y
+   ninguna etiqueta sube porque el cierre haya sido tolerante. El resto del cierre
+   corre igual que en `/close`.
+7. **Adjudicar vigentes y dejar la supersesión preparada.** Si el corpus trae
+   versiones del mismo documento conviviendo, **el vigente lo elige el humano** —
+   ningún mecanismo elige solo—, y cada versión no vigente deja su fila de
+   supersesión: el corpus solo-vigente es precondición estructural del payload
+   (§8.3). Adoptado el corpus, cada record vigente queda como **base de su
+   familia**, sin `.vN`, con su sidecar declarando que es corpus artesanal
+   adoptado y que se lee con el glosario de §13.2 — de modo que cuando la primera
+   investigación nueva lo supere, superarlo sea mecánico.
+8. Cerrar. **La retro es obligatoria** (§7.5).
+
+**`/normalize`** — el repo que ya existe, llevado al formato vigente.
+
+**Nada se borra sin confirmación explícita, y la confirmación se pide con el
+inventario a la vista.** La adjudicación de qué está vigente es **gate humano
+siempre**.
+
+1. **Inventario read-only, primero y completo.** No escribe un solo archivo, y
+   **describe sin clasificar ni adjudicar**: qué archivo repo-level está en el
+   roster §4.5 y cuál está fuera; qué archivo de entrada **engordó** hasta
+   albergar reglas de otra casa (la prueba del puntero delgado, medida); qué
+   documentos hay que clasificar; qué **monolitos** concentran el eco; qué
+   **épocas conviven como carpetas**; qué **familias de versión** no tienen
+   vigente declarado; qué queda **huérfano** —lo que nadie enlaza, ni desde los
+   findings ni desde el registry—; y qué es **higiene operativa** —entornos,
+   cachés, salida de build—, que **se nombra y no se toca**: normalizar
+   documentación no es limpiar el entorno. El inventario se reporta **tal cual**,
+   sin resumirlo.
+2. **Clasificar**: cada documento en **exactamente una** clase de §4.1 —record,
+   evergreen, efímero— o como `hard-doc` (§2.3), preguntando ante duda. Un
+   documento sin consumidor ni momento de lectura declarados no es un documento:
+   es chat que se solidificó (§4.2).
+3. **Triturar los monolitos.** Un archivo append-heavy que ningún agente puede
+   dejar de leer es **eco por frecuencia en su forma pura** (§8): la corrección
+   se agrega al final y el texto viejo sigue ahí, pesando. El triturado usa dos
+   mecanismos que ya existen: lo **vigente** sale como filas de registry y
+   records individuales —cada decisión a su ADR, cada requisito a la RTM, cada
+   conflicto a su fila—, y el **original queda congelado EN SU LUGAR**, declarado
+   como ruta inmutable extra. No se mueve, no se edita, no pierde un byte: sale
+   del contexto de lectura porque ya nada lo apunta, no porque se lo haya tocado.
+4. **Adjudicar vigentes — GATE HUMANO, sin excepción.** Las familias de versión y
+   las épocas conviviendo se resuelven eligiendo **una** vigente por concepto, y
+   esa elección **no la toma el flujo**: ante tres arquitecturas simultáneas
+   ningún mecanismo elige solo. Cada versión superada deja su fila de supersesión
+   y su anotación de sidecar.
+5. **Retención declarada y borrado.** Un borrado sin retención declarada es una
+   pérdida, no una normalización: se declara **qué se retira, por qué ya no
+   aplica y dónde vive lo que lo reemplaza**. Un evergreen muerto **se BORRA, no
+   se archiva** (§4.1): el historial ya vive en git, y una carpeta de archivo es
+   una época más conviviendo en el contexto de todo agente que lea la carpeta
+   padre. **Tres cosas este flujo no borra nunca, y se planta antes de
+   proponerlas:** la **documentación dura** (§2.3), los **records** —no se podan:
+   se enmiendan o se superseden— y los archivos del **roster §4.5**.
+6. Cerrar: regenerar derivados, correr integridad, y anunciar qué se clasificó,
+   qué se congeló, qué se retiró y **qué quedó fuera de alcance y por qué**. Todo
+   pase que escribe deja su entrada en el log de migraciones (§9.2).
+
+**Lo que este flujo NO hace:** *idioma y nomenclatura* —son migración por capas
+encadenada después (§1.8, §9), no normalización—; *higiene operativa* —se flagea
+y no se toca—; *investigar* —una pregunta sin responder es una unidad y se
+planifica—; y *elegir por el humano* —ninguna adjudicación, ninguna clase dudosa,
+ningún borrado.
+
+#### Las pipelines de operación
+
+Entrado el proyecto por una de las tres puertas, el ciclo es el mismo para todos:
+se lanza una unidad, se destila lo que no es una corrida, se cierra con QA y se
+sintetiza.
 
 **`/launch rNN`** — cuando una unidad está ready.
 
@@ -1022,15 +1348,59 @@ de findings y la bitácora (esa sesión tiene el contexto completo: es el mejor
 lugar para destilar) → los exports verbatim aterrizan directo en
 `raw/run-NN.md`, por ingesta con destino declarado (§2.6; §12, G3).
 
+**`/distill`** — el bronze que no es una corrida, hasta el conocimiento.
+
+Es la contraparte de `/launch` para las cinco clases de fuente que no producen
+una corrida de investigación (§2.1): el material ya está adentro y hay que
+llevarlo a silver y a gold **sin re-investigar nada**. Salda la deuda que §2.4
+declara — material cargado sin destilación declarada.
+
+1. **Verificar la cadena antes de declarar nada.** El bronze tiene que tener
+   **sidecar de procedencia**: no se destila lo que no tiene procedencia. Se
+   re-verifica su `sha256` contra lo que el sidecar declaró, y **si no coincide,
+   el bronze cambió**: la destilación se detiene. Un byte añadido rompe la cadena
+   de auditoría de toda afirmación que lo cite (§2.2).
+2. **Resolver la unidad que aloja la destilación** (§2.2): el silver y el gold
+   viven en la carpeta de una unidad, siempre. Si el bronze no pertenece a
+   ninguna, **cuál lo destila lo decide el humano**, y el bronze se queda donde
+   está, citado por ruta y `sha256`.
+3. **Escribir el silver — extracción, no interpretación.** Es el `01-report` de
+   esa unidad y se valida contra **la misma plantilla de siempre**: no hay una
+   plantilla aparte para destilar (principio de diseño #4). Lo que este flujo
+   agrega es **cómo se cita un bronze que no es una corrida**: una fila de fuente
+   **por pasaje citado**, con su `<unit>-srcNN` y su **locator** —página y párrafo
+   del documento, `mm:ss` del audio o el video, ID de respuesta y columna de la
+   tanda, encuadre de la imagen—, porque **sin locator la afirmación no es
+   verificable y por lo tanto no es re-derivable**. La calidad A–D (§2.5) se
+   aplica a **quién produjo el bronze**, no a lo bien presentado que esté: el
+   dictamen de un proveedor sobre su propio producto es **C** aunque venga
+   membretado. Lo que el bronze **no dice** va a la sección de huecos: un silver
+   que rellena con contexto propio dejó de ser re-derivable.
+4. **Escribir el borrador de gold**, con el techo de madurez de §0.2 #4 puesto y
+   sin negociación: **una sola fuente no da `established`** —la madurez sube por
+   triangulación o por replicación entre corridas, y un documento suelto no es
+   ninguna de las dos— y **sin ID de fuente la afirmación es `speculative`**. Es
+   un borrador y se entrega como tal: quien lo finaliza y lo asienta es el
+   coordinador, en el cierre.
+5. **Sellar la destilación** como anotación **append-only** del sidecar del
+   bronze: qué salió de él, dónde vive y con qué hash se verificó. La incisión va
+   ahí y **jamás dentro del verbatim** (§9.2). Con la destilación declarada, ese
+   bronze deja de figurar como deuda.
+
+**Datos personales y consentimiento viven en el sidecar** (§2.2): si el bronze
+los tiene y el sidecar no lo declara, la destilación se detiene y pregunta.
+**La documentación dura no debe silver ni gold** (§2.3): es fuente de record.
+
 **`/close rNN`** — el gate de QA y todo lo que sigue. Los pasos 1–3 son el
 status `qa`.
 
 1. **Validación de formato** — scripteada: columnas de la tabla de requisitos,
    IDs, y madurez + volatilidad + fecha + ID de fuente en cada afirmación.
    **La validación estricta es la norma.** Existe un modo *lenient* que baja
-   todo error a advertencia; está **reservado al retro-parse de corpus
-   artesanal** del flujo de adopción (fuera del alcance de v0.3), un cierre
-   normal jamás lo usa, y todo cierre lenient anota su desviación por escrito.
+   todo error a advertencia; está **reservado al retro-parse de corpus artesanal
+   de `/adopt`** (§10.2, paso 6), un cierre normal jamás lo usa, y todo cierre
+   lenient anota su desviación por escrito en el record que §5 le declara. Si
+   aparece en un cierre normal, es un error de proceso, no un atajo.
    Lo que no valida se corrige **en origen** — jamás se maquilla un export.
 2. **Auditoría de afirmaciones** — script + prompt: verificación de existencia
    de la fuente sobre una muestra determinista, chequeo de soporte
@@ -1085,12 +1455,24 @@ tipo de flujo. Esta spec instancia el playbook de inception.
 
 | Gate | Disparador | Chequeo | Autoridad | Evidencia de entrada | Record de salida |
 |---|---|---|---|---|---|
-| Ratificación de la constitution | `/inception` paso 2 | supuestos, dominio, techo de gasto, umbrales, disparadores | humano | borrador de constitution | `constitution.md` v1 |
-| Ratificación del mapa | `/inception` paso 3 | alcance de unidades, `needs`, kill criteria, briefing | humano | borrador de mapa | protocols congelados |
+| Ratificación de la constitution | `/inception` paso 4 | supuestos, dominio, techo de gasto, umbrales, disparadores **y los valores del bloque ratificado** (§4.3) | humano | borrador de constitution | `constitution.md` v1 |
+| Ratificación del mapa | `/inception` paso 6 | alcance de unidades, `needs`, kill criteria, briefing | humano | borrador de mapa | protocols congelados |
+| **Adjudicación de vigentes** | `/normalize` paso 4 · `/adopt` paso 7 | cuál versión de cada concepto es la vigente, entre familias de versión o épocas conviviendo | humano | inventario de familias y épocas | filas de supersesión de lo superado |
 | QA del report | `/close` pasos 1–2 | plantilla, etiquetas, auditoría de afirmaciones | script + prompt | report + sources | fila de métricas + registry de auditorías |
 | Disparo de kill criteria | cualquier hallazgo, cualquier unidad | la decisión afectada se revisa de inmediato | humano | hallazgo disparador | enmienda / ADR |
 | Decisiones de síntesis | `/synthesis` | todo lo que la síntesis decide | humano | registry completo | ADRs · arquitectura · constitution de desarrollo |
-| Enmienda del bloque ratificado | cambio en `horizons`, `runs`, `ids`, `metrics` o `context` | ¿sube `version:` de la constitution en el mismo commit? | humano + script | diff de la config | bump + changelog |
+| Enmienda del bloque ratificado | cambio en `horizons`, `runs`, `ids`, `metrics` o `context` **de una constitution en vigor** (§4.3) | ¿sube `version:` de la constitution en el mismo commit? | humano + script | diff de la config | bump + changelog |
+
+**Los nombres de gate NO son un enum cerrado.** El primer párrafo lo dice y esta
+tabla lo respeta: **el kernel es el esquema**, y *qué* gates existen es un
+playbook por tipo de flujo. Esta tabla instancia el playbook de inception — es el
+**set de nombres canónicos recomendados**, no el universo de lo declarable. Un
+flujo que instancie el esquema con otro gate no está violando la spec; congelar
+la lista sí violaría §11.1, porque los tipos de flujo que §11.3 declara fuera de
+alcance traerán los suyos. En consecuencia, **quien lea el registry de gates
+resuelve por alias**: una fila histórica escrita con otro texto se lee igual —el
+registry es append-only y no se reescribe (§13.2)—, y quien escriba una fila usa
+el nombre canónico cuando lo hay.
 
 **Todo gate consumido deja además su fila en el registry de gates** (§7.4,
 §12 G6): cuál, cuándo, qué se decidió y qué enmendó.
@@ -1212,26 +1594,52 @@ knob de ancho sería una perilla por proyecto que nadie necesita.
 **Decisión — tabla normativa.** Los registries son un set cerrado que fija esta
 spec, no el proyecto:
 
-| Registry | Archivo | Régimen |
-|---|---|---|
-| Metrics | `metrics.md` | **append-only** |
-| Ingest log | `ingest-log.md` | **append-only** |
-| Supersessions | `supersessions.md` | **append-only** |
-| Migrations | `migrations.md` | **append-only** |
-| QA audits | `qa-audits.md` | **append-only** |
-| **Gates** | `gates.md` | **append-only** — un registro por gate consumido (§7.4) |
-| Requirements (RTM) | `requirements.md` | record **marcable**: las filas jamás se borran; una fila superada se marca `SUPERSEDED by <id>`, y una enmienda propaga marca de invalidación |
-| Conflicts | `conflicts.md` | record **marcable**: la fila evoluciona en sus columnas de resolución y status; el ID y el origen no cambian |
-| Status | `STATUS.md` | **vista derivada** — regenerable, jamás editada a mano, jamás autoritativa. No es un record |
+| Registry | Datos — **el record** | Vista — **derivada** | Régimen de los datos |
+|---|---|---|---|
+| Metrics | `data/metrics` | `metrics.md` | **append-only** |
+| Ingest log | `data/ingest-log` | `ingest-log.md` | **append-only** |
+| Supersessions | `data/supersessions` | `supersessions.md` | **append-only** |
+| Migrations | `data/migrations` | `migrations.md` | **append-only** |
+| QA audits | `data/qa-audits` | `qa-audits.md` | **append-only** |
+| **Gates** | `data/gates` | `gates.md` | **append-only** — un registro por gate consumido (§7.4) |
+| Requirements (RTM) | `data/requirements` | `requirements.md` | record **marcable**: las filas jamás se borran; una fila superada se marca `SUPERSEDED by <id>`, y una enmienda propaga marca de invalidación |
+| Conflicts | `data/conflicts` | `conflicts.md` | record **marcable**: la fila evoluciona en sus columnas de resolución y status; el ID y el origen no cambian |
+| Status | — *(sin datos propios)* | `STATUS.md` | **vista derivada** — deriva de los protocols; regenerable, jamás editada a mano, jamás autoritativa. No es un record |
+
+Las rutas son relativas a `<registry>/`. **La casa es normativa; la extensión, no**
+— ver más abajo.
+
+**El dato es el record; el `.md` es su vista.** Las dos mitades cargan reglas
+distintas, y confundirlas es lo que esta fila separa:
+
+- **Los datos son el record.** Ahí vive lo que la fila afirmó, ahí se hace
+  cumplir el régimen, y ahí —y solo ahí— se escribe. **Nadie edita un registry a
+  mano:** se escribe por la puerta que el kit expone, que es la que garantiza el
+  régimen.
+- **La vista es derivada** (principio de operación #1): tiene que ser
+  **exactamente** la regeneración de sus datos. Editarla a mano es escribir una
+  afirmación que ninguna fuente respalda, y por eso se rechaza aunque el texto
+  sea correcto: una vista que se editó dejó de ser una vista.
+
+**Esta tabla norma la casa y el régimen, no el formato.** `<registry>/data/` es
+la casa de los datos y esta tabla nombra el dataset de cada registry; **qué
+serialización usan es decisión del kit**, con una sola exigencia de esta spec:
+que el régimen se pueda verificar **sin parser de terceros**, porque la guarda
+corre con git y Python estándar (§4.4). El formato puede cambiar en un bump —
+**el régimen no cambia con él**, y ese cambio no es enmienda de esta spec.
 
 **Append-only significa que el contenido previo no se pisa**: se agrega al
-final, y el encabezado del propio archivo lo declara. **Marcable** significa que
-la fila se edita solo para marcarla, nunca para borrarla ni para cambiar lo que
-afirmó.
+final, y la vista lo declara en su encabezado. **Marcable** significa que la fila
+se edita solo para marcarla, nunca para borrarla ni para cambiar lo que afirmó —
+y solo mutan las columnas declaradas marcables.
 
-*Estado de implementación: ocho de los nueve existen en el kit 0.1.0.
-**`gates.md` es nuevo** — lo exige §7.4 y lo siembra el kit 0.2.0. La spec lo
-declara; no lo implementa.*
+**El `status` de una fila de conflicto es `open | resolved`**, en inglés como
+todo valor de enum (principio de diseño #6). La spec ya declaraba la **columna**
+—"la fila evoluciona en sus columnas de resolución y status"— pero no su
+vocabulario, y un vocabulario sin declarar es un dialecto esperando a nacer: el
+dialecto español que el tooling 0.1.x–0.2.x escribió se lee con glosario (§13.2)
+y **jamás se emite**. `resolution` queda para la prosa de la adjudicación, en
+`language`.
 
 ---
 
@@ -1261,6 +1669,10 @@ declara; no lo implementa.*
 | **acta** | lote de gates presentado para que el humano lo resuelva de una sola lectura |
 | **evidence** | la casa del bronze que tiene clase de fuente pero no pertenece a ninguna unidad: `<research>/evidence/<class>/` |
 | **language** | el idioma de prosa del repo, declarado en la config; los nombres del framework siguen en inglés (§1.8) |
+| **entry flow** | una de las tres puertas por las que un proyecto entra al framework: `/inception`, `/adopt`, `/normalize`. El set es cerrado (§10.2) |
+| **retro-lenient close** | el cierre de una unidad adoptada bajo el modo lenient de validación, con su desviación anotada en el record que §5 le declara. Solo existe en `/adopt` |
+| **monolith** | archivo append-heavy que nadie puede dejar de leer y donde la corrección se agrega al final sin retirar lo viejo: eco por frecuencia en su forma pura. Se tritura (§10.2, `/normalize`) |
+| **thin pointer** | archivo de entrada que **apunta** a donde vive una regla sin repetirla. Su prueba: si se borra, no se pierde ninguna regla — solo el atajo (§4.5) |
 
 ### 13.2 Vocabulario histórico — contrato de lectura del corpus viejo
 
@@ -1268,7 +1680,7 @@ El bronze jamás se reescribe (§9.1). Estas equivalencias son **parte del
 contrato**: quien lea un record histórico las necesita, y quien migre no las
 aplica al verbatim.
 
-| Histórico | Significaba | Canónico v0.3 |
+| Histórico | Significaba | Canónico vigente |
 |---|---|---|
 | `C1`, `C2`, `CN` | "Corrida N" (híbrido español) | `run-01`, `run-02`, `run-NN` |
 | `PI` | "pasada inicial" — la primera corrida de la unidad | `run-01` |
@@ -1279,6 +1691,7 @@ aplica al verbatim.
 | `est / sup / pla / esp` | el mismo enum, abreviado por una sesión | ídem |
 | `established / supported` (parcial) | el mismo enum, en inglés a medias | ídem, completo |
 | `alta / media / baja` | enum de volatilidad en español | `high / medium / low` |
+| `abierto / resuelto` | status de una fila de conflicto, dialecto del tooling 0.1.x–0.2.x | `open / resolved` (§12, G6) |
 | `<unit>-v2-srcNN` | espacio de fuentes de un record superado | **vigente** — es el namespace de supersesión (§7.2) |
 | "Bloque Común" | el bloque común del payload | **briefing** |
 | `inbox/` | la bandeja de entrada dentro del repo (v0.2 y kit 0.1.x) | **no existe**: el staging es externo y la ingesta clasifica en la puerta (§2.6). Los `inbox/` de repos adoptados son bronze congelado que `/migrate` reconcilia |
@@ -1346,9 +1759,8 @@ lleva su ítem con alternativa descartada en el acta (Sección B.4).
 | Δ12 | **E2 — roster normativo de archivos repo-level** | tabla cerrada de todo archivo de nivel repo con rol, lector, momento de lectura y clase; archivo nuevo = enmienda de spec; regla de entrada (punteros delgados o vistas generadas, jamás segundas casas); constancias de `briefing.md` y `AGENTS.md` | **§4.5 (nueva)**, §5 | B27–B29 |
 | Δ13 | **E3 — idioma de prosa como parámetro** | `language:` en la config; el framework sigue en inglés (nombres, enums, campos) y la prosa se escribe en el idioma declarado; una sola versión de cada skill, jamás copias traducidas; cambiar el idioma es migración; los renders para terceros son vistas derivadas fuera del KB | §0.1 #6, **§1.8 (nueva)**, §10.2, §12 G4, §13.1 | B30–B32 |
 
-**Regla de auditoría del alcance:** todo párrafo normativo de v0.3 traza a la
-tabla §14.1, a la §14.2 o a la §14.3. Si algo no traza a ninguna, es scope creep
-y se borra.
+**Regla de auditoría del alcance:** todo párrafo normativo traza a §14.1, §14.2,
+§14.3 o §14.5. Si algo no traza a ninguna, es scope creep y se borra.
 
 ---
 
@@ -1366,7 +1778,54 @@ ratificado) llega con el **kit 0.2.0**, migrando junto — jamás a medias.
 
 ---
 
-# ACTA DE GATE — spec v0.3
+### 14.5 v0.3 → v0.4
+
+Insumo: las **ocho enmiendas encoladas** por las sesiones de activación e
+implementación (kit 0.2.0, 0.3.0 y 0.4.0), la **práctica implementada y validada**
+del kit 0.4.0 —los cuatro flujos, con sus gates y sus guardas— y las **tres
+adjudicaciones de tooling** ya aceptadas por el coordinador. Agenda **cerrada** en
+diez ítems: nada más entró, y lo que la redacción encontró fuera de ella está en
+el acta como laguna o como nota post-gate, no en el texto normativo.
+
+| Δ | Cambio | Secciones tocadas | Ítem del batch |
+|---|---|---|---|
+| Δ14 | **La regla pre-gate es de la clase, no de esta spec.** Mientras el `status:` de una constitution es `draft`/`proposed` no está en vigor: editarla —incluido **ratificarla**— entra a su misma versión y no la bumpea. Corolario sobre el bloque ratificado (pre-gate se ratifica **con** la constitution) y fallo del lado seguro (sin `status:` declarado, se la trata como vigente) | §4.3, § "Cómo se lee y cómo se enmienda" | 1 |
+| Δ15 | **`retro-lenient-deviations.md` ocupa fila en la carpeta de unidad**, y el set de esa carpeta queda **cerrado** como el roster de §4.5 cierra la raíz: un archivo sin fila no es una excepción, es una violación | §5 | 2 |
+| Δ16 | **Casa del silver y del gold para el bronze sin unidad:** la aloja **una unidad**, siempre; el bronze se queda en `evidence/<class>/` y se cita por **ruta y `sha256`**. Mudarlo es migración opt-in, jamás un efecto de destilar | §2.2, §5 | 3 |
+| Δ17 | **Fila para los archivos que exige el ecosistema** (`LICENSE`, `NOTICE`, `CITATION.cff`): existen legítimamente y están **fuera del KB** — no son records, no entran a la cadena de evidencia y el ciclo de borrado no los alcanza. Criterio, no lista exhaustiva | §4.5 | 4 |
+| Δ18 | **Fila para el documento de plan**, que §12 G1 y §10.2 ya exigían sin declararle casa: mapa + briefing + una sección por unidad, apuntado por el `plan:` del protocol. Es **record** — comisionar de nuevo es un plan nuevo que supersede, jamás una edición | §4.5 | 5 |
+| Δ19 | **Los datos del registry son el record; el `.md` es su vista derivada.** El régimen se hace cumplir sobre los datos; la vista tiene que ser exactamente su regeneración. La casa (`<registry>/data/`) es normativa; **el formato lo elige el kit** y cambiarlo no es enmienda | §4.5, §12 G6 | 6 |
+| Δ20 | **`INDEX.md` en la raíz**, canonizado por nombre y por ruta: vista derivada generada y **puntero delgado**. Deja de ser "el índice, que hoy no existe" | §4.5 | 7 |
+| Δ21 | **Las tres condiciones de la reubicación, en la letra:** contenido byte a byte idéntico · destino en otra casa protegida · rastro en el MISMO commit. Escritas acá, ningún tooling futuro las afloja sin enmendar esta spec | §9.1 | 8 |
+| Δ22 | **Canonización de los cuatro flujos desde la práctica implementada:** las **tres entradas y no hay más** (`/inception`, `/adopt`, `/normalize`) con sus tres invariantes, y **`/distill`** para el bronze que no es una corrida. Se describe lo que el kit 0.4.0 ya implementa y validó — no se rediseña nada | §10.2, §4.5 (quién verifica el roster), §11.1 | 9 |
+| Δ23 | **Adjudicaciones de tooling asentadas:** `status` de conflicto = `open \| resolved` · los **nombres de gate no son enum cerrado** (playbook por flujo, resolución por alias) · la **reubicación es contrato** de §9.1 y no una excepción que el tooling concede | §11.1, §12 G6, §9.1, §13.2 | 10 |
+
+**Qué se arrastró de la v0.3 sin cambio:** todo lo demás. Las secciones que el
+batch no toca —§0, §1, §2.1 y §2.3–§2.6, §3, §4.1–§4.2 y §4.4, §6, §7, §8, §9.2–§9.4,
+§10.1, §11.2–§11.3, §12 G1–G5— quedan **verbatim**, y sus reglas de activación ya
+consumidas siguen siendo el registro de cómo entraron.
+
+### 14.6 Estado de la v0.4
+
+`proposed`. Rige la **v0.3** hasta que el humano ratifique el ACTA DE GATE del
+final. La ratificación sube `status:` a `ratified` y congela esta versión; desde
+ese acto, todo cambio posterior vuelve al protocolo duro (§4.3).
+
+**Esta enmienda no exige activación de tooling.** El kit 0.4.0 ya implementa lo
+que estos diez ítems canonizan — esa es precisamente la razón de que se canonice.
+Los desajustes que la redacción encontró entre la letra nueva y el tooling
+existente son **ajustes menores post-gate**, están enumerados uno por uno en el
+acta, y ninguno bloquea la ratificación.
+
+---
+
+# ACTA DE GATE — spec v0.3 · **CONSUMIDA el 2026-08-19**
+
+> **Esta acta ya se resolvió.** Se conserva porque §14.3 traza sus enmiendas a
+> ítems de esta lista (B3, B24–B32) y porque las alternativas descartadas de
+> B1–B32 son el "por qué no" de reglas todavía vigentes. **El gate pendiente es
+> el de la v0.4, al final de este documento** — no se resuelve nada leyendo esta
+> sección. Su contenido es un record: no se edita.
 
 *Esta acta es el gate. Está diseñada para resolverse **leyendo solo el acta**:
 cada ítem trae qué se decide, la resolución propuesta y la alternativa
@@ -1512,3 +1971,117 @@ estar en la agenda de la Fase 2. Se anotan, no se deciden.*
    registry de la tabla de §12 G6 se declara dueño de esa fila; hoy la deja el
    log de ingesta, que es donde `--keep` la escribe. Se anota: normar el dueño
    explícito es enmienda, no redacción.
+
+---
+
+# ACTA DE GATE — spec v0.4
+
+*Esta acta es el gate, y es el **único** pendiente en este documento. Está
+diseñada para resolverse **leyendo solo el acta**: cada ítem trae qué se decide,
+la resolución propuesta y —cuando la decisión es nueva— la alternativa
+descartada. Ratificar el acta ratifica la v0.4 y sube su `status:` a `ratified`;
+rechazar un ítem obliga a enmendar la sección que lo implementa antes de subir el
+estado.*
+
+**Alcance, para que se pueda auditar de un vistazo.** v0.4 = v0.3 ratificada
+arrastrada sin cambio + los **10 ítems del batch v0.4** del plan de mejoras
+vigente. La agenda estaba **cerrada** antes de escribir la primera línea. La
+Sección A es lo que ya se adjudicó en conversación o se entregó en el kit y esta
+spec convierte en texto normativo; la Sección B es lo que la redacción tuvo que
+decidir por su cuenta. Al final: las **lagunas** —lo que bloqueó a la redacción o
+la obligó a asumir— y las **notas post-gate** de tooling, que no bloquean nada.
+
+**Ningún ítem de este batch exige activación de tooling.** El kit 0.4.0 ya
+implementa lo que se canoniza; por eso la v0.4 no lleva reglas de activación
+nuevas.
+
+## Sección A — Consolidación (ya adjudicado o ya entregado; solo confirmar)
+
+Nada de esta sección es nuevo. Son decisiones tomadas en conversación por el
+coordinador, o mecanismos ya construidos y validados en el kit, que la spec
+convierte en letra. **Confirmar que el texto dice lo ratificado.**
+
+| # | Decisión ya tomada | Cuándo y dónde se tomó | Dónde quedó normada |
+|---|---|---|---|
+| A1 | **La reubicación es contrato**, no una excepción que la guarda concede: mismo blob + destino en casa protegida + rastro en el mismo commit | adjudicación del coordinador, 2026-08-19 (sesión 3A) | §9.1 |
+| A2 | **`status` de conflicto = `open \| resolved`**, en inglés | ídem | §12 G6, §13.2 |
+| A3 | **Los gates NO son enum cerrado**: playbook por tipo de flujo, nombres canónicos recomendados y resolución por alias | ídem | §11.1 |
+| A4 | **La regla pre-gate de §4.3 vale para la constitution del proyecto**: `draft`/`proposed` no está en vigor, ratificar entra a la misma versión, y sin `status:` se la trata como vigente | implementado y validado en la guarda, 2026-08-20 (`c603302`) | §4.3 |
+| A5 | **El chequeo de integridad censa solo el registry**; el censo de la raíz y de `<research>/` vive en el flujo de normalización, donde hay un humano mirando | adjudicación de gate en vuelo, 2026-08-19 | §4.5 ("Quién verifica el roster"), §10.2 |
+| A6 | **Tres entradas y no hay más** (`/inception`, `/adopt`, `/normalize`), como pipelines de normalización | ratificado en el plan de mejoras, 2026-08-13; entregado en el kit 0.4.0 | §10.2 |
+| A7 | **Los registries son datos y su `.md` es la vista generada**; los tres regímenes se hacen cumplir sobre los datos | entregado en el kit 0.3.0, revisión aceptada | §4.5, §12 G6 |
+| A8 | **`INDEX.md` en la raíz, generado** — el índice puerta-de-entrada que §1.2 daba por supuesto | ídem | §4.5 |
+| A9 | **La desviación de un cierre lenient vive en `<unit>/retro-lenient-deviations.md`**, con la salida literal de la validación | entregado en el kit 0.4.0 (`/adopt`) | §5, §10.2 |
+| A10 | **El silver lo aloja una unidad, siempre**; el bronze sin unidad se queda en `evidence/<class>/` y se cita por ruta y `sha256` | costura decidida en la sesión 3B | §2.2, §5, §10.2 |
+| A11 | **La adopción no inventa filas de ingesta**: la procedencia queda en tres casas que ya existen (log de ingesta, log de migraciones, sidecar) | ídem | §10.2 (`/adopt`, paso 3) |
+| A12 | **El monolito se congela EN SU LUGAR**, como ruta inmutable extra — no se mueve ni se edita | ídem | §10.2 (`/normalize`, paso 3) |
+| A13 | **Todo pase que escribe de la normalización deja su entrada en el log de migraciones** | ídem | §10.2 (`/normalize`, paso 6) |
+
+## Sección B — Decisiones nuevas de esta redacción (requieren ratificación)
+
+Cada ítem: **decisión → resolución propuesta → alternativa descartada.**
+
+| # | Decisión | Resolución propuesta | Alternativa descartada |
+|---|---|---|---|
+| B1 | **¿La spec congela el formato de los datos del registry?** El ítem 6 del batch los nombra como `data/*.jsonl` | **La casa es normativa; la extensión, no.** §12 G6 nombra `<registry>/data/` y el dataset de cada registry, y exige una sola cosa del formato: que el régimen se verifique **sin parser de terceros** (§4.4). Cambiar la serialización es un bump del kit, no una enmienda | Escribir `.jsonl` en la letra — contradiría lo que la propia G6 declara ("norma el régimen, no el formato") y convertiría una decisión de implementación en materia de gate humano |
+| B2 | **¿Qué clase es el documento de plan?** | **Record.** Es la comisión que un gate ratificó y que el `plan:` de cada protocol apunta como procedencia; comisionar de nuevo es **un plan nuevo que supersede**, con su fila | Evergreen con una sola casa — editarlo cambiaría retroactivamente el sobre que una sesión ya abrió, que es exactamente lo que el régimen de record existe para impedir |
+| B3 | **¿Cómo entra `LICENSE`/`NOTICE`/`CITATION` sin abrir la taxonomía cerrada?** | **Una fila definida por criterio**: archivos que **exige el ecosistema**, sin regla del framework adentro y con dueño fuera del repo. Están **fuera del KB**: no son records, no se citan, el borrado no los alcanza. La lista es ilustrativa; el criterio es la prueba, y un archivo que porta reglas del repo no entra por esta puerta | (a) Enumeración exhaustiva — cada convención nueva del ecosistema (`SECURITY.md`, `CODEOWNERS`…) exigiría enmienda de la spec; (b) dejarlos fuera de la tabla — un repo que hace lo legalmente correcto quedaría en falta con su propia constitution |
+| B4 | **¿El set de la carpeta de una unidad es cerrado?** v0.3 decía "contiene TODO lo suyo", que no es una prueba | **Sí, cerrado, con la misma prueba de §4.5**: la tabla de §5 es el set completo —contando `<archivo>.vN.md` y el contenido de `raw/`—, y un archivo sin fila no es una excepción sino una violación | Dejar la carpeta abierta — es justamente lo que permitió que `retro-lenient-deviations.md` naciera sin fila y llegara a este batch como enmienda |
+| B5 | **¿`/distill` es una cuarta entrada?** | **No.** Las entradas son tres; `/distill` es la pipeline de destilación, hermana de `/launch`: opera sobre bronze **que ya está adentro** | Llamarlas "cuatro entradas" — volvería falso el set cerrado de tres y diría que material ya ingresado "entra" |
+| B6 | **La adjudicación de vigentes es un gate humano que dos flujos consumen y §11.1 no declaraba** | **Se le agrega su fila** a la tabla del playbook (disparador, chequeo, autoridad, evidencia, record de salida). Sin fila viviría sin declarar, que es el síntoma que la retro #11 corrigió para los demás | No agregarla y tratarla como "juicio dentro del flujo" — un gate sin fila no deja rastro, y §7.4 exige que todo gate consumido lo deje |
+| B7 | **Los pasos de `/inception` en v0.3 (cuatro) no son los del flujo implementado (siete)** | **Se renumera para describir la práctica**: elicitación · `language` · siembra · constitution + gate · unidades preliminares · mapa y briefing + gate · cierre. Las referencias de §11.1 siguen a los pasos nuevos | Conservar los cuatro pasos — §11.1 seguiría apuntando a pasos que no existen, y la confirmación de `language` (§1.8) quedaría invisible en el único flujo obligado a honrarla antes del primer artefacto |
+| B8 | **¿La spec escribe los umbrales del censo de normalización?** (tamaño de monolito, líneas de un puntero delgado) | **No.** La spec norma el **mecanismo y la prueba**; los umbrales son calibración de tooling y viven en el kit | Escribir los números — congelaría una calibración en un documento cuyo cambio exige gate humano, y afinar un umbral pasaría a ser una enmienda constitucional |
+| B9 | **¿La spec escribe los comandos y las flags de los flujos?** | **No.** §10.2 describe pasos, gates, garantías y prohibiciones; la superficie de línea de comandos es del kit y se documenta ahí | Escribirlas — sería una segunda casa de la interfaz del kit, que deriva al primer bump (principio de diseño #4) |
+| B10 | **¿Qué pasa con el acta de la v0.3, ya consumida?** | **Se conserva marcada como CONSUMIDA**, con un puntero al gate vigente. §14.3 traza sus enmiendas a ítems de esa lista y las alternativas descartadas de B1–B32 son el "por qué no" de reglas todavía vigentes | Borrarla — dejaría punteros colgando desde §14.3 y perdería el fundamento de 32 decisiones que siguen en vigor |
+| B11 | **Cuatro términos que el texto nuevo usa como términos de arte y el glosario no tenía** | **Entradas nuevas en §13.1**: `entry flow`, `retro-lenient close`, `monolith`, `thin pointer`; y en §13.2, el dialecto `abierto/resuelto` del status de conflicto | Dejarlos sin entrada — un término de arte sin glosario es exactamente como nacieron los dialectos que §13 vino a cerrar (§1.7) |
+| B12 | **Texto de la v0.3 que quedó falso al consumirse** | **Se retira**, y su historia queda en §14 y en el historial: la "regla de activación" de §4.5 (el chequeo no se construyó ahí, y eso se adjudicó), el "estado de implementación" de §12 G6 (`gates.md` existe desde 0.2.0), el "hoy no existe" del índice, y el "fuera del alcance de v0.3" del modo lenient | Conservarlo — una constitution que describe como pendiente lo que ya existe le enseña al lector algo falso, y es la clase de deriva que §0.2 #1 prohíbe |
+
+## Lagunas — lo que la redacción no pudo cerrar sola
+
+*Definición estricta: solo lo que bloqueó la redacción o la obligó a asumir. Las
+ideas de mejora se descartaron; no se reportan.*
+
+1. **El gate de adjudicación de vigentes no tiene nombre canónico.** §11.1 le
+   declara la fila (B6), pero la spec no fija tokens de gate (§11.1, Δ23) y el
+   kit hoy escribe esa fila bajo el nombre recomendado de otro gate. Quien
+   compare el registry contra §11.1 no va a encontrar el nombre. **Se asumió**
+   dejar el token sin fijar, que es lo coherente con "los gates no son enum
+   cerrado". Resolverlo es ajuste de tooling —darle su nombre— o una enmienda
+   futura si se prefiere fijarlo en la letra.
+2. **La adopción no deja fila del gate de adjudicación de vigentes.** §7.4 exige
+   —desde la v0.3— que todo gate consumido deje su fila; el flujo de adopción
+   hace la adjudicación con el humano y escribe las supersesiones, pero no la
+   fila del gate. La redacción **no corrigió la práctica** (habría sido rediseño)
+   ni ablandó la regla: se declara acá. Es un ajuste de tooling post-gate.
+3. **Un proyecto que califica para dos puertas a la vez no tiene regla.** Cada
+   flujo declara cuándo *no* es la puerta y deriva a la que sí, pero ninguno dice
+   qué hacer con un repo que **ya existe con documentación** *y* además trae
+   corpus artesanal sin adoptar. Lo natural sería encadenarlos, y **la redacción
+   escribió esa regla y después la retiró**: no está en la práctica, y
+   canonizarla habría sido rediseñar. §10.2 queda diciendo solo lo que los flujos
+   dicen —cada puerta deriva cuando no es la suya—, y el encadenamiento queda
+   como decisión del humano caso por caso hasta que se valide.
+
+## Notas post-gate — tooling que sigue a la letra nueva
+
+*Ninguna bloquea la ratificación: son el trabajo que la canonización habilita, y
+por regla dura de esta sesión no se tocó una sola línea de tooling.*
+
+1. El censo del roster **no conoce los archivos del ecosistema**: con la fila de
+   §4.5 ratificada, `LICENSE`/`NOTICE`/`CITATION` dejan de ser "fuera del roster".
+2. El censo del roster ubica los **documentos de plan** en una canasta aparte
+   —"la tabla §4.5 aún no le declara fila"—: con Δ18 pasan a ser roster.
+3. El flujo de adopción lleva una **constancia de que la fila de
+   `retro-lenient-deviations.md` está encolada** para este batch: con Δ15
+   ratificada, se retira.
+4. El flujo de destilación lleva la misma clase de constancia sobre **la casa del
+   silver**: con Δ16 ratificada, se retira.
+5. El gate de adjudicación de vigentes y su fila (lagunas 1 y 2).
+6. `kit_version`, `README` y `CHANGELOG` del kit **referencian la spec v0.3**:
+   pasan a v0.4 cuando el gate se consuma.
+7. La fila del registry de gates de **esta misma ratificación** se escribe al
+   consumirla, como cualquier otra (§7.4).
+
+---
+
+*Fin del acta. El gate pendiente es este.*
