@@ -18,9 +18,16 @@ from .dates import today
 
 SUFFIX = ".meta.yaml"
 ANNOTATION_RE = re.compile(r"^annotation_(\d+):", re.M)
+FIELD_RE = re.compile(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 HEADER = ("# Sidecar de procedencia — inception-kit (spec §2.2, §9.2).\n"
           "# Append-only: acá se AGREGA, nunca se pisa. El record de al lado no se\n"
           "# edita jamás — la incisión de una migración vive en este archivo.\n")
+
+#: Nombre del pase con el que `/distill` declara la destilación de un bronze
+#: (spec §2.4). Material cargado sin destilación declarada es **deuda**: no se
+#: prohíbe cargar sin destilar, se prohíbe olvidarlo — y esta anotación es la
+#: forma en que deja de estar olvidado.
+DISTILL_PASS = "distill"
 
 
 def path_for(record: Path) -> Path:
@@ -33,8 +40,9 @@ def next_number(text: str) -> int:
 
 
 def annotate(record: Path, note: str, pass_name: str,
-             superseded_by: str | None = None, date: str | None = None) -> Path:
-    """Agrega una anotación de migración al sidecar del record. Lo crea si falta."""
+             superseded_by: str | None = None, date: str | None = None,
+             extra: dict | None = None) -> Path:
+    """Agrega una anotación al sidecar del record. Lo crea si falta."""
     target = path_for(record)
     existing = target.read_text(encoding="utf-8") if target.exists() else HEADER
     number = next_number(existing)
@@ -44,9 +52,49 @@ def annotate(record: Path, note: str, pass_name: str,
              f"  note: {note}"]
     if superseded_by:
         block.append(f"  superseded_by: {superseded_by}")
+    block.extend(f"  {key}: {value}" for key, value in (extra or {}).items())
     target.write_text(existing.rstrip("\n") + "\n" + "\n".join(block) + "\n",
                       encoding="utf-8")
     return target
+
+
+def read(text: str) -> tuple[dict, list]:
+    """(cabecera, anotaciones) de un sidecar. Lector propio: jamás falla.
+
+    Se lee con un parser mínimo y no con el de la config a propósito: un scan
+    recorre todos los sidecares del repo, y un sidecar raro tiene que salir
+    reportado, no tumbar la corrida.
+    """
+    header: dict = {}
+    annotations: list = []
+    current: dict | None = None
+    for line in text.splitlines():
+        match = FIELD_RE.match(line)
+        if not match:
+            continue
+        indent, key, value = match.group(1), match.group(2), match.group(3).strip()
+        if not indent:
+            current = {} if ANNOTATION_RE.match(f"{key}:") else None
+            if current is not None:
+                annotations.append(current)
+            else:
+                header[key] = value
+        elif current is not None:
+            current[key] = value
+    return header, annotations
+
+
+def load(record: Path) -> tuple[dict, list]:
+    target = path_for(record)
+    if not target.is_file():
+        return {}, []
+    return read(target.read_text(encoding="utf-8"))
+
+
+def distillations(record: Path) -> list:
+    """Las destilaciones ya declaradas para este bronze (spec §2.4)."""
+    _, annotations = load(record)
+    return [entry for entry in annotations if entry.get("pass") == DISTILL_PASS]
 
 
 def provenance(origin: str, source_class: str, digest: str, note: str,

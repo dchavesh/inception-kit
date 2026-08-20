@@ -10,10 +10,11 @@ description: Regenera y muestra las vistas derivadas del repo (tablero e índice
 2. **`derive-index`** — regenera el índice puerta-de-entrada: estado, decisiones
    vigentes, conflictos abiertos, síntesis vigente y dónde vive cada cosa, en
    una página. También derivado, también jamás a mano.
-3. **`check-recurrence`** — qué `review_by` venció y qué cadencia `refresh:` se
-   cumplió, con las relanzamientos que **propone**. Nombrar las propuestas; no
-   ejecutar ninguna: el gate es humano. Vencido sin re-verificar baja un nivel
-   de madurez — jamás se lava.
+3. **`check-recurrence`** — qué `review_by` venció, qué cadencia `refresh:` se
+   cumplió y qué bronze quedó **sin destilar**, con los relanzamientos que
+   **propone**. Nombrar las propuestas; no ejecutar ninguna: el gate es humano.
+   Vencido sin re-verificar baja un nivel de madurez — jamás se lava; y la carga
+   sin destilar es deuda que salda `/inception-kit:distill` (spec §2.4).
 4. **`doctor`** — reportar su veredicto en una línea; si falla, listar los
    problemas tal cual y no maquillar ninguno. Si aparece `kit_version`
    desincronizado, eso es **error**: correr `kit-init` y `/inception-kit:migrate`.

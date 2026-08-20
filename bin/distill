@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Sella la destilación de un bronze: declara su silver en el sidecar (spec §2.4).
+
+La destilación **la hace el juicio** —transcribir, extraer, atribuir— y por eso
+el silver lo escribe la skill. Lo mecánico es exactamente esto: verificar que el
+bronze siga siendo el que su procedencia declara, y dejar declarado qué salió de
+él y dónde vive. Sin esa declaración, la carga es **deuda** y aparece como
+pendiente en `check-recurrence`.
+
+  distill BRONZE --unit UNIT --silver RUTA [--apply]
+
+**Verifica la cadena antes de declarar nada.** Si el `sha256` del bronze no es
+el que su sidecar declaró, el bronze cambió: eso rompe la cadena de auditoría de
+toda afirmación que lo cite, y el comando se planta (spec §2.2).
+
+No commitea: el sello viaja con el silver, y el silver lo commitea el flujo que
+lo escribió. Escribir en una casa protegida exige `--apply`.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib import passes, sidecar
+from kitlib.errors import fail
+from kitlib.ids import find_unit_dir, is_valid_unit_id
+
+USAGE = "uso: distill BRONZE --unit UNIT_ID --silver RUTA [--apply]"
+
+
+def resolve_bronze(config, raw: str) -> Path:
+    path = (config.root / raw).resolve()
+    if not path.is_file():
+        fail(f"{raw}: no existe o no es archivo")
+    if not sidecar.path_for(path).is_file():
+        fail(f"{config.relative(path)}: sin sidecar de procedencia — no se destila lo "
+             "que no tiene procedencia (spec §2.2). Si llegó de afuera, ingerilo con "
+             "`/inception-kit:ingest`; si ya vivía en el repo sin casa, reubicalo con "
+             "`migrate relocate`.")
+    return path
+
+
+def verify_chain(config, bronze: Path) -> str:
+    """El bronze tiene que seguir siendo, byte a byte, el que su sidecar declaró."""
+    header, _ = sidecar.load(bronze)
+    declared = str(header.get("sha256") or "").strip()
+    digest = passes.sha256(bronze)
+    if not declared:
+        print(f"AVISO: {config.relative(bronze)}: su sidecar no declara `sha256` "
+              "(procedencia de antes de que el kit lo escribiera). Se sella la "
+              "destilación con el hash de hoy.", file=sys.stderr)
+        return digest
+    if declared != digest:
+        fail(f"{config.relative(bronze)}: el `sha256` no coincide con el que declara su "
+             f"sidecar ({declared[:12]} ≠ {digest[:12]}) — el bronze CAMBIÓ. El "
+             "verbatim es el rastro de auditoría: un byte añadido rompe la cadena de "
+             "toda afirmación que lo cite (spec §2.2, §9.1). Resolvelo antes de "
+             "destilar nada.")
+    return digest
+
+
+def resolve_silver(config, unit_id: str, raw: str) -> Path:
+    if not is_valid_unit_id(config, unit_id):
+        fail(f"--unit {unit_id}: fuera de la gramática de IDs del repo")
+    unit_dir = find_unit_dir(config, unit_id)
+    silver = (config.root / raw).resolve()
+    if not silver.is_file():
+        fail(f"--silver {raw}: no existe. El silver se escribe primero — este comando "
+             "declara una destilación hecha, no la encarga.")
+    if unit_dir.resolve() not in silver.parents:
+        fail(f"--silver {config.relative(silver)}: vive fuera de "
+             f"`{config.relative(unit_dir)}/`. La destilación la aloja su unidad: "
+             "todo lo que pertenece a una unidad vive en su carpeta (principio de "
+             "diseño #5), y el gold que sale del silver es su `02-findings`.")
+    return silver
+
+
+def main() -> None:
+    config = kitconfig.load()
+    positional, flags = passes.parse_flags(
+        sys.argv[1:], {"--unit": None, "--silver": None, "--apply": False}, USAGE)
+    if len(positional) != 1 or not flags["--unit"] or not flags["--silver"]:
+        fail(USAGE)
+
+    bronze = resolve_bronze(config, positional[0])
+    digest = verify_chain(config, bronze)
+    silver = resolve_silver(config, flags["--unit"], flags["--silver"])
+    relative_silver = config.relative(silver)
+
+    declared = [entry for entry in sidecar.distillations(bronze)
+                if entry.get("silver") == relative_silver]
+    if declared:
+        print(f"`{config.relative(bronze)}` → `{relative_silver}`: la destilación ya "
+              f"está declarada ({declared[0].get('date')}). El sidecar es append-only: "
+              "nada que agregar.")
+        return
+
+    print(f"## Destilación declarada — {config.relative(bronze)}\n")
+    print(f"- **bronze** `{config.relative(bronze)}` (sha256 {digest[:12]}, verificado "
+          "contra su procedencia)")
+    print(f"- **silver** `{relative_silver}` — re-derivable desde el bronze, sin "
+          "re-ejecutar investigación (spec §2.2)")
+    print(f"- **unidad** {flags['--unit']} — su `02-findings` es el gold, y lo "
+          "finaliza el cierre\n")
+
+    if not flags["--apply"]:
+        print("(dry-run) El sidecar vive en casa protegida: re-corré con `--apply`.")
+        return
+
+    note = sidecar.annotate(
+        bronze,
+        "destilación declarada — el silver es re-derivable desde este bronze (spec §2.4)",
+        sidecar.DISTILL_PASS,
+        extra={"unit": flags["--unit"], "silver": relative_silver,
+               "sha256": digest[:12]})
+    print(f"sidecar → {config.relative(note)} (+1 anotación; append-only)")
+    print("\nCommiteá el silver y su sidecar JUNTOS: el sello es parte de la "
+          "destilación, no un trámite aparte.")
+
+
+if __name__ == "__main__":
+    main()

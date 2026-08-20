@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Chequeo de recurrencia — qué venció y qué relanzamiento PROPONER (spec §6).
+"""Chequeo de recurrencia — qué venció, qué es deuda y qué PROPONER (spec §6, §2.4).
 
-Las dos capas de un mecanismo, ambas derivadas y ninguna almacenada:
+Las dos capas de la frescura, ambas derivadas y ninguna almacenada:
 
   · `review_by` (§6.1) — fecha del record + horizonte de su volatilidad. Vencido
     sin re-verificar ⇒ baja un nivel de madurez: se refresca o entra degradado.
   · `refresh:` (§6.2) — cadencia declarada en el protocol. Al cumplirse, toca
     **una corrida o versión nueva que supersede a la vencida, jamás una edición**.
+
+Y la deuda que §2.4 manda hacer visible: **el bronze cargado sin destilación
+declarada**. No se prohíbe cargar sin destilar — se prohíbe olvidarlo, y por eso
+aparece acá y no en un mecanismo nuevo: lo que este comando ya hacía es
+exactamente esto, listar lo que quedó pendiente y nombrar quién lo atiende.
 
 **Este comando propone; jamás ejecuta.** Los gates son humanos (§0 — autoridad
 en los gates humanos): acá salen la lista y la acción concreta que correspondería,
@@ -22,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import config as kitconfig
-from kitlib import freshness
+from kitlib import distillation, freshness
 from kitlib import registry as reg
 from kitlib import registrystore as store
 from kitlib.dates import today
@@ -56,7 +61,19 @@ def print_cadences(rows: list) -> None:
     print()
 
 
-def proposals(config, expired: list, due: list, now: str) -> list[str]:
+def print_debt(rows: list) -> None:
+    print("## Carga sin destilar (spec §2.4)\n")
+    if not rows:
+        print("Ninguna: todo el bronze con procedencia declara su destilación.\n")
+        return
+    print("| Bronze | Class | Loaded |")
+    print("|---|---|---|")
+    for row in rows:
+        print(f"| {row.relative[:TITLE_WIDTH]} | {row.source_class} | {row.date} |")
+    print()
+
+
+def proposals(config, expired: list, due: list, debt: list) -> list[str]:
     """Qué correspondería hacer. Una línea por propuesta, con su acción concreta."""
     units = load_units(config)
     out: list[str] = []
@@ -79,6 +96,14 @@ def proposals(config, expired: list, due: list, now: str) -> list[str]:
             f"**supersede** a la vencida (`/inception-kit:launch {row.unit}` tras el "
             f"gate humano de relanzamiento). Jamás una edición del record vencido "
             f"(§6.2).")
+
+    for row in debt:
+        out.append(
+            f"**`{row.relative}`** ({row.source_class}, cargado el {row.date}) — sin "
+            f"destilación declarada: es **deuda** (§2.4). Destilarlo es "
+            f"`/inception-kit:distill` — silver re-derivable desde el bronze y "
+            f"borrador de gold; el sello lo deja `distill … --apply` en el sidecar. "
+            f"El bronze no se toca en ningún caso.")
 
     synthesis = [row for row in store.read(config, reg.GATES)
                  if reg.is_synthesis_gate(row.get("gate"))]
@@ -104,6 +129,7 @@ def main() -> None:
     cadences = freshness.cadences(config, now)
     due = freshness.expired(cadences)
     blocked = [row for row in cadences if row.state in ("not-closed", "no-close-date")]
+    debt = distillation.pending(config)
 
     horizons = " · ".join(f"{word} {months}m" for word, months in config.horizons.items())
     print(f"# Recurrencia — {now}\n")
@@ -112,12 +138,13 @@ def main() -> None:
     if not quiet:
         print_expiries(expired)
         print_cadences(due)
+        print_debt(debt)
 
-    lines = proposals(config, expired, due, now)
+    lines = proposals(config, expired, due, debt)
     print("## Propuestas (el gate es humano — este comando no ejecuta nada)\n")
     if not lines:
-        print("Nada que proponer: ningún `review_by` vencido y ninguna cadencia "
-              "cumplida.\n")
+        print("Nada que proponer: ningún `review_by` vencido, ninguna cadencia "
+              "cumplida y ninguna carga sin destilar.\n")
     for index, line in enumerate(lines, start=1):
         print(f"{index}. {line}\n")
 
