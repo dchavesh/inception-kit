@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guarda de inmutabilidad del inception-kit (spec §1.2).
+"""Guarda de inmutabilidad del inception-kit (spec §4.1, §4.4).
 
 Se instala vía shim en la ruta efectiva de hooks (`core.hooksPath`) y vive
 vendorizado en `.inception-kit/hooks/` — versionado con el repo, sin depender
@@ -8,13 +8,18 @@ del caché del plugin ni de Claude Code.
 Rechaza en el commit:
   · modificar/borrar/renombrar records ya commiteados: `raw/`, `01-report`,
     `02-findings`, `03-sources`, ADRs, `payload.md` sellado (`/launch` lo
-    commitea junto con el sello: commiteado ⇒ lanzado ⇒ record), el inbox y
-    las rutas extra que declare `records.extra_immutable_paths`
+    commitea junto con el sello: commiteado ⇒ lanzado ⇒ record), la casa del
+    bronze sin unidad (`evidence/<class>/`), la casa de la documentación dura
+    y las rutas extra que declare `records.extra_immutable_paths` — donde vive,
+    entre otras cosas, un `inbox/` legado (spec §2.6, §4.4)
   · tocar un protocol en `done`; en `frozen`/`running`/`qa` solo se permite
     sellar frontmatter (status hacia adelante, session, constitution, runs,
-    mode) con cuerpo idéntico
+    mode, context) con cuerpo idéntico
   · reescribir historia en los registries append-only
   · modificar la constitution sin subir `version:` (enmienda ⇒ versión + changelog)
+  · cambiar el BLOQUE RATIFICADO de la config (`horizons`, `runs`, `ids`,
+    `metrics`, `context`) sin subir `version:` de la constitution en el MISMO
+    commit — es una enmienda, no una edición (spec §11.1, §12 G4)
 
 Enmiendas = archivos nuevos, no ediciones. Agregar archivos siempre se permite.
 """
@@ -30,11 +35,11 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / ".inception-kit" / "lib"))
 
 from kitlib import config as kitconfig                       # noqa: E402
-from kitlib.config import STATUS_ORDER                       # noqa: E402
+from kitlib.config import CONFIG_NAME, RATIFIED_KEYS, STATUS_ORDER   # noqa: E402
 from kitlib.registry import APPEND_ONLY                      # noqa: E402
 
-#: Campos que `/launch` puede sellar sobre un protocol ya congelado.
-SEALABLE_KEYS = {"status", "session", "constitution", "runs", "mode"}
+#: Campos que `/launch` puede sellar sobre un protocol ya congelado (spec §5).
+SEALABLE_KEYS = {"status", "session", "constitution", "runs", "mode", "context"}
 
 
 def git(*args: str) -> str:
@@ -59,15 +64,24 @@ def staged_changes() -> list[tuple[str, str]]:
 
 
 def record_patterns(config) -> tuple[str, ...]:
+    """Backstop por rutas: protege las CASAS REALES donde el material aterriza.
+
+    Con el `inbox` fuera del contrato (spec §2.6), lo que la guarda protegía en
+    él lo protege ahora en el destino: la carpeta de la unidad, la casa del
+    bronze sin unidad y la de la documentación dura (§4.4). Un `inbox/` legado
+    sigue protegido mientras exista, declarado en `extra_immutable_paths`.
+    """
     investigations = re.escape(config.data["paths"]["investigations"])
     decisions = re.escape(config.data["paths"]["decisions"])
-    inbox = re.escape(config.data["paths"]["inbox"])
+    evidence = re.escape(config.data["paths"]["evidence"])
+    hard_docs = re.escape(config.data["paths"]["hard_docs"])
     patterns = [
         rf"^{investigations}/[^/]+/raw/",
         rf"^{investigations}/[^/]+/0[123]-(?:report|findings|sources)(?:\.v\d+)?\.md$",
         rf"^{investigations}/[^/]+/payload\.md$",
         rf"^{decisions}/adr-.+\.md$",
-        rf"^{inbox}/",
+        rf"^{evidence}/",
+        rf"^{hard_docs}/",
     ]
     patterns.extend(rf"^{re.escape(str(extra).rstrip('/'))}(?:/|$)"
                     for extra in config.extra_immutable_paths)
@@ -123,6 +137,37 @@ def check_constitution(path: str, errors: list) -> None:
                       "versión y anota changelog")
 
 
+def ratified_diff(path: str) -> list[str]:
+    """Claves del bloque ratificado cuyo SIGNIFICADO cambió entre HEAD y el índice."""
+    head = kitconfig.ratified_block(kitconfig.parse_yaml(git("show", f"HEAD:{path}"), path))
+    staged = kitconfig.ratified_block(kitconfig.parse_yaml(git("show", f":{path}"), path))
+    return [key for key in RATIFIED_KEYS if head[key] != staged[key]]
+
+
+def check_ratified_block(path: str, constitution: str, staged: dict, errors: list) -> None:
+    """Gate de enmienda del bloque ratificado (spec §11.1, §12 G4).
+
+    Los números epistémicos viven en la config (una casa), pero la autoridad
+    sigue siendo humana: cambiarlos exige subir `version:` de la constitution
+    **en el mismo commit**. Se compara el significado, no la ortografía — el
+    relabel mecánico del enum de volatilidad no dispara el gate.
+    """
+    changed = ratified_diff(path)
+    if not changed:
+        return
+    detail = (f"{path}: bloque ratificado modificado ({', '.join(changed)}) — "
+              "es una ENMIENDA, no una edición")
+    if constitution not in staged:
+        errors.append(f"{detail}: exige subir `version:` de {constitution} en el "
+                      "MISMO commit, con su fila de changelog (gate humano)")
+        return
+    head_fm, _ = frontmatter_and_body(git("show", f"HEAD:{constitution}"))
+    new_fm, _ = frontmatter_and_body(git("show", f":{constitution}"))
+    if head_fm.get("version") == new_fm.get("version"):
+        errors.append(f"{detail}: {constitution} está en el commit pero su "
+                      "`version:` no subió")
+
+
 def main() -> None:
     if not head_exists():
         return  # primer commit: nada commiteado ⇒ nada es record todavía
@@ -133,8 +178,13 @@ def main() -> None:
     append_only = {config.relative(config.registry_file(name)) for name in APPEND_ONLY}
     constitution = config.relative(config.constitution)
 
+    changes = staged_changes()
+    staged = {path: status for status, path in changes}
+
     errors: list[str] = []
-    for status, path in staged_changes():
+    if staged.get(CONFIG_NAME) == "M":
+        check_ratified_block(CONFIG_NAME, constitution, staged, errors)
+    for status, path in changes:
         if status == "A":
             continue
         if any(re.search(pattern, path) for pattern in records):
@@ -157,7 +207,7 @@ def main() -> None:
         print("pre-commit: guarda de inmutabilidad — commit rechazado\n", file=sys.stderr)
         for error in errors:
             print(f"  ✗ {error}", file=sys.stderr)
-        print("\nLos records no se editan (spec §1.2). Correcciones = enmiendas en "
+        print("\nLos records no se editan (spec §4.1). Correcciones = enmiendas en "
               "archivos nuevos.", file=sys.stderr)
         sys.exit(1)
 
