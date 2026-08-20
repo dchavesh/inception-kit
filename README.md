@@ -2,7 +2,7 @@
 
 El **inception-framework** completo en una sola casa: spec, scripts, skills, plantillas y hook, empaquetado como **plugin de Claude Code** (este repo es también su marketplace) y consumido por los proyectos blite.
 
-**Estado: 0.3.0** — integridad profunda sobre la **`SPEC.md` v0.3 ratificada** (gate humano, 2026-08-19): los nueve **registries son datos con schema** y sus `.md` son vistas generadas, nace el **índice puerta-de-entrada** (`INDEX.md`), **`/migrate`** materializa la migración por capas de §9 (supersesión mecánica con round-trip, reubicación de bronze legado, rastro doble) y **`check-recurrence`** vigila las dos capas de frescura de §6 proponiendo, jamás ejecutando (ver `CHANGELOG.md`). Pendiente: los tres flujos de entrada (`/inception`, `/adopt`, `/normalize`) y `/distill`.
+**Estado: 0.4.0** — el framework **completo** sobre la `SPEC.md` v0.3 ratificada: a la integridad profunda de 0.3.0 se suman los **tres flujos de entrada** —`/inception` (idea nueva), `/adopt` (corpus artesanal), `/normalize` (repo existente), **y no hay más entradas**— y **`/distill`**, que lleva el bronze no investigativo hasta el conocimiento por el mismo carril de procedencia (ver `CHANGELOG.md`).
 
 **La spec manda.** `SPEC.md` es la constitution del framework y la única fuente normativa: los `§` que citan scripts y skills apuntan ahí. Enmendarla exige bump de `version:`, fila de changelog y gate humano.
 
@@ -16,7 +16,9 @@ El **inception-framework** completo en una sola casa: spec, scripts, skills, pla
 | Spec | Vive ACÁ (una casa por cosa): `SPEC.md` v0.3, clase constitution, `status: ratified` (2026-08-19). Un repo consumidor no la copia — la referencia por el `kit_version` que declara su config |
 | Distribución | Plugin de Claude Code + marketplace en este mismo repo; instalación/updates por https (credencial oauth de la máquina, verificada; el alias SSH `gitlab-blite` queda para uso interactivo) |
 | Versionado | Semver explícito desde `0.1.0` + `CHANGELOG.md`; update = bump del kit, jamás cirugía por repo; `autoUpdate` encendido en consumidores |
-| Contenido | 14 scripts generalizados (`bin/`) · **7 skills**: `launch`, `close`, `synthesis`, `status`, `ingest`, `plan`, `migrate` (el cierre retro-lenient no es skill: lo absorbe el flujo `/adopt`) · plantillas internas al plugin · hook de inmutabilidad + `kit-init` idempotente (única costura por-repo) · skills de claude.ai: `research-preflight`, `research-close`, `new-run` (en `claude-ai-skills/`; el humano las copia a su cuenta) · `framework.config.yaml` por proyecto |
+| Contenido | 16 scripts generalizados (`bin/`) · **11 skills**: los tres flujos de entrada `inception`, `adopt`, `normalize` + `plan`, `launch`, `close`, `synthesis`, `distill`, `ingest`, `migrate`, `status` (el cierre retro-lenient no es skill: lo absorbe el flujo `/adopt`) · plantillas internas al plugin · hook de inmutabilidad + `kit-init` idempotente (única costura por-repo) · skills de claude.ai: `research-preflight`, `research-close`, `new-run` (en `claude-ai-skills/`; el humano las copia a su cuenta) · `framework.config.yaml` por proyecto |
+| Entradas | **Tres, y no hay más** (pipelines de normalización): `/inception` (idea nueva → elicitación idea-agnóstica → semilla + constitution neutral → R0 en `pending`) · `/adopt` (corpus artesanal sin repo → retro-parse, protocols retroactivos, cierre retro-lenient anotado) · `/normalize` (repo con documentación → inventario → clases → estandarizar → retención y borrado). Un edge case no se le agrega al framework: se normaliza hacia él |
+| Destilación | `/distill` cierra el medallion para el bronze que no es una corrida: silver re-derivable con locators por clase, borrador de gold con techo de madurez (una sola fuente no da `established`), y el sello como anotación append-only del sidecar. **La carga sin destilar es deuda** y `check-recurrence` la lista (spec §2.4) |
 | Nomenclatura | **Inglés** para todo nombre de skill, comando, campo de contrato, columna, operación y definición — **incluidos los valores de enum**: madurez `established / supported / plausible / speculative`, volatilidad `high / medium / low`. **Vigente desde 0.2.0**: parsers, plantillas y claves de `horizons` migraron juntos, jamás a medias. El corpus histórico no se reescribe: se lee con el glosario de spec §13.2 |
 | Idioma de prosa | `language:` en la config (arranque `en`, spec §1.8). El framework es inglés; la **prosa** —cuerpo de protocols, reports, findings, sources, payloads, constitution y ADRs, y lo que las skills le dicen al humano— va en el idioma declarado. **Una sola versión de cada skill y plantilla**: jamás copias traducidas. Cambiarlo tras el primer artefacto es migración |
 | Ingesta | **Destino obligatorio, tres formas** (spec §2.6): unidad (`--unit [--run N]` → `raw/`), clase sin unidad (`--class` → `evidence/<class>/` con sidecar), documentación dura (`--hard-doc`, o `--external` con puntero + `sha256` + sidecar en el ingest-log). **El `inbox` no existe**: el único staging es externo al repo, y ante ambigüedad la ingesta pregunta y no avanza |
@@ -40,10 +42,11 @@ Simplicidad — un mecanismo por problema; los edge cases se adaptan al framewor
 ```
 SPEC.md             la constitution del framework — la fuente normativa
 .claude-plugin/     plugin.json + marketplace.json (el repo es su propio marketplace)
-bin/                los 14 comandos deterministas — van al PATH de Bash con el plugin activo
+bin/                los 16 comandos deterministas — van al PATH de Bash con el plugin activo
   kitlib/           núcleo compartido: config, IDs, parsing, fechas, vocabulario, registries,
-                    frescura, relabel, sidecars, vistas derivadas
-skills/             las 7 skills del plugin, con sus plantillas adentro
+                    frescura, relabel, sidecars, vistas derivadas, roster, inventario,
+                    destilación, rutas de record y mecánica de pases
+skills/             las 11 skills del plugin, con sus plantillas adentro
 templates/          lo que kit-init siembra en un repo: framework.config.yaml + hook
                     (y `ci/recurrence.yml`, opcional, que el kit NO instala)
 claude-ai-skills/   las 3 skills del otro lado de la frontera (el humano las copia — ver su README)
@@ -57,7 +60,9 @@ claude-ai-skills/   las 3 skills del otro lado de la frontera (el humano las cop
 | `derive-index` | regenera `INDEX.md`, el índice puerta-de-entrada |
 | `registry` | la única puerta de escritura del registry: `add`, `mark`, `render`, `show`, `schema` |
 | `migrate` | migración por capas: `plan`, `derived`, `relabel`, `relocate` (todo pase escribe solo con `--apply`) |
-| `check-recurrence` | vencidos y cadencias cumplidas, con los relanzamientos que propone |
+| `normalize` | inventario read-only de un repo existente (roster §4.5, puntero delgado, monolitos, épocas, huérfanos) + `freeze` y `retire`, ambos solo con `--apply` |
+| `distill` | sella la destilación de un bronze en su sidecar, tras re-verificar su `sha256` |
+| `check-recurrence` | vencidos, cadencias cumplidas y carga sin destilar, con los relanzamientos que propone |
 | `derive-review-by` | deriva `review_by` por hallazgo y lista vencidos |
 | `validate-report` | valida el formato del report de una unidad (`--lenient` reservado a `/adopt`) |
 | `claim-audit-sample` | muestra determinista de afirmaciones + candidatos a eco |
@@ -68,6 +73,10 @@ claude-ai-skills/   las 3 skills del otro lado de la frontera (el humano las cop
 
 | Skill | Qué hace |
 |---|---|
+| `/inception-kit:inception` | idea cruda → elicitación → semilla + constitution neutral → R0 en `pending` |
+| `/inception-kit:adopt` | corpus artesanal sin repo → retro-parse + cierre retro-lenient anotado |
+| `/inception-kit:normalize` | repo existente → inventario → clases → estandarizar → retención y borrado |
+| `/inception-kit:distill` | bronze no investigativo → silver re-derivable + borrador de gold |
 | `/inception-kit:plan` | necesidad → mapa de unidades + Bloque Común + protocols en `pending` |
 | `/inception-kit:launch` | payload de una unidad frozen+ready, preflight incluido; sella session |
 | `/inception-kit:close` | QA completo → RTM → métricas → findings → `done` |

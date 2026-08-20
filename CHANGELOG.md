@@ -7,6 +7,107 @@ El kit se actualiza por **bump de versión**, jamás por cirugía repo por repo.
 Al subir de versión, cada repo consumidor corre `kit-init` (runner de
 migraciones) — principio #7, sintonía por migración.
 
+## [0.4.0] — 2026-08-20
+
+**Los flujos de entrada y la destilación.** El framework deja de tener una sola
+puerta: `/inception` para un proyecto nuevo, `/adopt` para un corpus artesanal
+que ya existe, `/normalize` para un repo con documentación — **y no hay más
+entradas**. Con `/distill`, el bronze que no es una corrida de investigación
+llega hasta el conocimiento por el mismo carril de procedencia que todo lo demás.
+
+Un edge case no se le agrega al framework: se **normaliza** hacia él (principio
+de diseño #1). Estos cuatro flujos son esas pipelines de normalización.
+
+### Added
+
+- **`/inception-kit:inception`** — de una idea cruda a un programa listo para
+  congelar (spec §10.2). Entrevista de elicitación **idea-agnóstica** (la skill
+  no porta ninguna idea de proyecto: pregunta, no propone), `language`
+  confirmado **antes del primer artefacto** —cambiarlo después es migración,
+  §1.8—, repo sembrado, **constitution neutral** en borrador para el gate humano
+  y protocols **R0** en `pending`. Las R0 son las que deciden si el programa va,
+  pivotea o se descarta, y nacen `clean-room`: son exploración y son sensibles a
+  falsificación. El freeze sigue siendo orden humana.
+  - `skills/inception/templates/constitution.md` — supuestos refutables,
+    dominio, techo de gasto, umbrales de QA, disparadores y jerarquía de
+    independencia, con changelog de enmiendas vacío. **Los horizontes NO se
+    escriben ahí:** la constitution apunta al bloque ratificado de la config
+    (§12 G4), y ratificarla ratifica esos valores tal como están.
+- **`/inception-kit:adopt`** — retro-parse de un corpus artesanal sin repo:
+  protocols **retroactivos** que describen la comisión que la corrida
+  efectivamente tuvo (`runs:` es cuántas hubo; los kill criteria que no
+  existieron se declaran vacíos), jerarquía de independencia **declarada** —el
+  pecado no es el contexto, es el contexto no declarado— y **cierre
+  retro-lenient ANOTADO**, que es el único lugar donde vive `--lenient`.
+  - La desviación se anota en `<unit>/retro-lenient-deviations.md` con la salida
+    literal del validador, su fila de gate y la anotación de sidecar. **Lo
+    lenient no lava nada:** sin fuente, la afirmación sigue siendo `speculative`.
+  - **Costura declarada — `/adopt` NO agrega un escritor del ingest-log.** El
+    ingest-log registra *llegadas*; el verbatim que llega de afuera pasa por
+    `ingest` y su fila nace ahí por construcción, y el material que ya vivía en
+    el repo no tuvo llegada — llenar esas columnas sería inventar una ingesta
+    que no ocurrió. La procedencia del corpus adoptado queda en tres casas que
+    ya existen: ingest-log, registry de migraciones y sidecar.
+- **`/inception-kit:normalize` + `normalize`** — el repo existente, llevado al
+  formato vigente. `normalize inventory` es read-only y censa **roster §4.5**,
+  **prueba del puntero delgado**, documentos a clasificar, **monolitos**,
+  **épocas como carpetas**, **familias de versión sin vigente**, **huérfanos** e
+  higiene operativa (que se nombra y no se toca). Exit 1 cuando hay algo que
+  adjudicar.
+  - **Acá vive el enforcement que `doctor` deliberadamente no hace.** El censo
+    de la raíz y de `<research>/` necesita juicio y un humano mirando; `doctor`
+    corre en cada push y censa solo el registry. La taxonomía de §4.5 es
+    **cerrada** (con `SPEC.md` y `AGENTS.md` nombrados uno por uno), y la prueba
+    del puntero delgado se **mide**: una línea de `README`/`CLAUDE`/`INDEX` que
+    también vive en la constitution o en la config es una segunda casa.
+  - **Triturado de monolitos** como paso nombrado: lo vigente sale como datos y
+    records individuales; el original queda **congelado en su lugar**
+    (`normalize freeze --apply`, vía `records.extra_immutable_paths`) — sale del
+    contexto de lectura sin perder un byte.
+  - **Borrado con plan primero.** `normalize retire --reason «…» --apply` exige
+    **retención declarada**, y se planta antes de proponer un record, un archivo
+    del roster o **documentación dura** — la única clase exenta del ciclo de
+    vida de borrado de cualquier flujo (§2.3). Sin `--apply` imprime el
+    inventario y para.
+  - **La adjudicación de vigentes es gate humano siempre:** ante tres
+    arquitecturas simultáneas, ningún mecanismo elige solo.
+- **`/inception-kit:distill` + `distill`** — bronze no investigativo →
+  **silver re-derivable** → **borrador de gold**. El silver es el `01-report` de
+  su unidad y se valida contra la plantilla de siempre (un contrato, un lugar);
+  lo que este flujo agrega es la **gramática de locators** por clase (página ·
+  `mm:ss` · ID de respuesta · encuadre) y el techo de madurez: una sola fuente
+  no da `established`, y sin `<unit>-srcNN` la afirmación es `speculative`.
+  - `distill BRONZE --unit U --silver RUTA --apply` **re-verifica el `sha256`
+    contra el sidecar antes de declarar nada** —si el bronze cambió, se planta—
+    y sella la destilación como anotación **append-only** del sidecar.
+  - **La destilación la aloja una unidad, siempre**: el gold es un
+    `02-findings`, y vive en la carpeta de su unidad. Un bronze de
+    `evidence/<class>/` **se queda donde está** y la unidad lo cita.
+- **`check-recurrence` gana su tercera capa: la carga sin destilar** (§2.4).
+  Material cargado sin destilación declarada es **deuda** y ahora aparece como
+  pendiente, con la propuesta concreta que la salda. Se sumó al comando que ya
+  hacía exactamente eso —listar lo pendiente y nombrar quién lo atiende— en vez
+  de abrir un segundo mecanismo.
+- **`kitlib.records`** — el backstop por rutas en una sola casa. La guarda de
+  inmutabilidad y `normalize` leen la misma lista: un flujo que no puede
+  proponer el borrado de un record necesita saber exactamente lo mismo que la
+  guarda usa para rechazarlo.
+- **`kitlib.passes`** — la mecánica común de los pases que escriben (git, índice
+  limpio, `--apply`, rastro en el registry de migraciones), compartida por
+  `migrate` y `normalize`.
+
+### Changed
+
+- **La guarda aplica la regla pre-gate de §4.3 a la constitution del proyecto.**
+  El protocolo duro de enmienda gobierna un documento **en vigor**: mientras su
+  `status:` es `draft`/`proposed`, la constitution es todavía la propuesta que
+  el gate va a ratificar, y editarla —incluido **ratificarla**— entra a esa
+  misma versión sin bumpearla, porque no hay nada vigente que superar. Lo mismo
+  vale para el bloque ratificado de la config: pre-gate, esos valores se
+  ratifican **con** la constitution. Sin esto, `/inception` no podía cerrar su
+  primer gate sin inventar una v2 que nunca existió. Falla del lado seguro: una
+  constitution sin `status:` declarado se trata como vigente.
+
 ## [0.3.0] — 2026-08-19
 
 **Integridad profunda.** Los registries dejan de ser markdown y pasan a ser
