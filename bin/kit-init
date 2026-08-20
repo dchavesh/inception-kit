@@ -36,7 +36,10 @@ from kitlib.status import build_board
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = PLUGIN_ROOT / "templates"
-SEEDED_DIRS = ("research", "investigations", "registry", "decisions", "inbox")
+#: Las casas que siembra un repo nuevo (spec §5). `inbox` NO está: el único
+#: staging es externo y la ingesta clasifica en la puerta (§2.6).
+SEEDED_DIRS = ("research", "investigations", "registry", "decisions",
+               "evidence", "hard_docs")
 
 
 class Report:
@@ -169,23 +172,36 @@ def installed_version(config, installation: Installation) -> str | None:
 def run_migrations(config, installation: Installation, report: Report,
                    installed: str | None) -> list:
     steps = migrations.pending(installed, VERSION)
+    changes: list[str] = []
     for step in steps:
         print(f"  migración → {step.version}: {step.description}")
         for line in step.apply(config, installation, report.dry_run):
             report.changed(line)
+            changes.append(line)
     if steps and not report.dry_run:
-        log_migration(config, installed, steps)
+        log_migration(config, installed, steps, changes)
     return steps
 
 
-def log_migration(config, installed: str | None, steps: list) -> None:
+def log_migration(config, installed: str | None, steps: list, changes: list[str]) -> None:
+    """Rastro obligatorio de toda migración (spec §9.2), con lo que quedó fuera."""
     log = config.registry_file("migrations")
     entry = [f"\n## {today()} — kit {installed} → {VERSION}\n"]
     for step in steps:
         entry.append(f"- **{step.version}** — {step.description}")
-    entry.append("- **Fuera de alcance, siempre:** el verbatim bronze (raw/, inbox/, "
-                 "payloads sellados) no se toca; los records de lectura se migran por "
-                 "supersesión mecánica vía `/migrate`, con opt-in humano.\n")
+    for change in changes:
+        entry.append(f"  - {change}")
+    entry.append("- **Verificación:** `kit-init` es idempotente — la segunda corrida "
+                 "no cambia nada; `doctor` valida el repo migrado.")
+    entry.append("- **Fuera de alcance, y por qué:** el **verbatim bronze** (`raw/`, "
+                 "`evidence/`, la casa de `hard-doc`, los payloads sellados y los "
+                 "`inbox/` legados) jamás se reescribe — es el rastro de auditoría "
+                 "(spec §9.1). Los **records de lectura** escritos con el enum "
+                 "histórico (`establecido/respaldado/plausible/especulativo` · "
+                 "`alta/media/baja`) se leen con el glosario de spec §13.2 y migran, "
+                 "si migran, por **supersesión mecánica** con opt-in humano: eso es "
+                 "`/migrate` (Fase 3.5), no este runner. Reconciliar un `inbox/` "
+                 "legado con las casas reales es del mismo pase.\n")
     log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n"
                    + "\n".join(entry) + "\n", encoding="utf-8")
 
@@ -203,7 +219,9 @@ def stamp_version(config, report: Report) -> None:
 
 
 def next_steps(config) -> list[str]:
-    steps = []
+    steps = [f"confirmar con el equipo `language: {config.language}` en "
+             f"{CONFIG_NAME} — es el idioma de la prosa del repo; los nombres, "
+             "campos, enums y columnas van siempre en inglés (spec §1.8)"]
     if not config.constitution.exists():
         steps.append(f"escribir y ratificar {config.relative(config.constitution)} "
                      "(gate humano) — la constitution es neutral: la semilla del "
