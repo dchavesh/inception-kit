@@ -1,0 +1,480 @@
+#!/usr/bin/env python3
+"""`/migrate` — la operación que materializa la sintonía por migración (spec §9).
+
+Migración **por capas**, y cada capa se toca como manda §9.1:
+
+  evergreen        se actualiza in-place        → `kit-init` (runner de versiones)
+  derivados        se REGENERAN                 → `migrate derived`
+  records lectura  supersesión mecánica OPT-IN  → `migrate relabel`
+  verbatim bronze  JAMÁS se reescribe           → `migrate relocate` solo lo MUEVE
+
+**Rastro doble, siempre** (§9.2): entrada en el registry de migraciones +
+anotación en el sidecar de cada record afectado. La incisión va al sidecar,
+nunca dentro del verbatim.
+
+  migrate [plan]        diagnostica y propone. No escribe nada.
+  migrate derived       regenera tablero, vistas de registry e índice
+  migrate relabel UNIT  supersesión mecánica de un record de lectura
+  migrate relocate SRC  reubica bronze legado a su casa real (mueve, no edita)
+
+Todo pase que escriba exige **`--apply`**: sin la flag imprime el diff y para.
+El opt-in es del humano, con el diff a la vista (§9.1).
+"""
+import difflib
+import hashlib
+import re
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import VERSION
+from kitlib import config as kitconfig
+from kitlib import freshness, relabel, sidecar
+from kitlib import registry as reg
+from kitlib import registrystore as store
+from kitlib import vocab
+from kitlib.dates import today
+from kitlib.errors import fail
+from kitlib.ids import find_unit_dir, is_valid_unit_id, latest_artifact, unit_dirs
+from kitlib.indexview import build_index, index_path
+from kitlib.status import build_board
+from kitlib.phrases import without_stamp
+
+COMMAND = "migrate"
+CHUNK = 1 << 20
+READ_RECORDS = ("02-findings", "01-report", "03-sources")
+VERSIONED_RE = re.compile(r"\.v(\d+)\.md$")
+GLOSSARY_NOTE = "vocabulario histórico; glosario en spec §13"
+USAGE = ("uso: migrate [plan] | migrate derived [--apply] | "
+         "migrate relabel UNIT [--record 02-findings] [--pass vocab|runs] [--apply] | "
+         "migrate relocate SRC (--class CLASE [--unit UNIT] | --hard-doc) [--apply]")
+
+
+# ——— utilidades ———
+
+class Git:
+    def __init__(self, root: Path):
+        self.root = root
+
+    def __call__(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+        result = subprocess.run(["git", "-C", str(self.root), *args],
+                                capture_output=True, text=True)
+        if check and result.returncode != 0:
+            fail(f"git {' '.join(args[:2])}…: "
+                 f"{result.stderr.strip() or result.stdout.strip()}")
+        return result
+
+    def require_clean_index(self) -> None:
+        if self("diff", "--cached", "--name-only").stdout.strip():
+            fail("hay cambios ya staged — un pase de migración commitea su propio "
+                 "rastro y no arrastra trabajo ajeno. Commiteá o reseteá primero.")
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sane_name(name: str) -> str:
+    stem, dot, extension = name.rpartition(".")
+    base = stem if dot else name
+    normalized = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode()
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", normalized).strip("-").lower() or "archivo"
+    return f"{normalized}.{extension.lower()}" if dot else normalized
+
+
+def parse_flags(argv: list[str], known: dict) -> tuple[list[str], dict]:
+    values, positional, index = dict(known), [], 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ("--apply", "--hard-doc"):
+            values[arg] = True
+        elif arg in values:
+            if index + 1 >= len(argv):
+                fail(f"{arg} requiere valor\n{USAGE}")
+            values[arg] = argv[index + 1]
+            index += 1
+        elif arg.startswith("--"):
+            fail(f"flag desconocida: {arg}\n{USAGE}")
+        else:
+            positional.append(arg)
+        index += 1
+    return positional, values
+
+
+def record_pass(config, name: str, summary: str, changes: list[str],
+                verification: str, out_of_scope: str) -> None:
+    """El rastro obligatorio de §9.2, mitad registry."""
+    store.append(config, "migrations", [{
+        "date": today(), "pass": name,
+        "from_version": config.kit_version, "to_version": VERSION,
+        "summary": summary, "changes": changes,
+        "verification": verification, "out_of_scope": out_of_scope,
+    }], COMMAND)
+
+
+def commit(git: Git, config, paths: list[str], subject: str) -> None:
+    git("add", "--", *paths)
+    if not git("diff", "--cached", "--name-only").stdout.strip():
+        print("nada que commitear.")
+        return
+    git("commit", "-m", subject)
+    print(f"commit: {subject}")
+
+
+def show_diff(before: str, after: str, label: str) -> None:
+    diff = difflib.unified_diff(before.splitlines(keepends=True),
+                                after.splitlines(keepends=True),
+                                fromfile=f"a/{label}", tofile=f"b/{label}")
+    body = "".join(diff)
+    print(body if body else "(sin diferencias)")
+
+
+# ——— plan ———
+
+def stale_derived(config) -> list[str]:
+    stale = []
+    board = config.registry_file("status")
+    if not board.exists() or without_stamp(board.read_text(encoding="utf-8")) \
+            != without_stamp(build_board(config)):
+        stale.append(config.relative(board))
+    for schema in reg.data_registries(config):
+        view = store.view_path(config, schema)
+        rendered = store.render(config, schema, store.read(config, schema), "migrate")
+        if not view.exists() or without_stamp(view.read_text(encoding="utf-8")) \
+                != without_stamp(rendered):
+            stale.append(config.relative(view))
+    index = index_path(config)
+    if not index.exists() or without_stamp(index.read_text(encoding="utf-8")) \
+            != without_stamp(build_index(config)):
+        stale.append(config.relative(index))
+    return stale
+
+
+def dialect_candidates(config) -> list[tuple]:
+    """Records de lectura vigentes escritos en vocabulario histórico (§13.2)."""
+    found = []
+    for unit_dir in unit_dirs(config):
+        for stem in READ_RECORDS:
+            record = latest_artifact(unit_dir, stem)
+            if not record.exists():
+                continue
+            text = record.read_text(encoding="utf-8")
+            counts = {name: len(relabel.substitutions(text, name))
+                      for name in relabel.PASSES}
+            if any(counts.values()):
+                found.append((unit_dir.name.split("-", 1)[0], record, counts))
+    return found
+
+
+def legacy_dirs(config) -> list[Path]:
+    """Casas legadas declaradas como inmutables que todavía guardan archivos."""
+    out = []
+    for extra in config.extra_immutable_paths:
+        directory = config.root / str(extra).rstrip("/")
+        if directory.is_dir() and any(p.is_file() for p in directory.rglob("*")):
+            out.append(directory)
+    return out
+
+
+def mode_plan(config, argv: list[str]) -> None:
+    print(f"# migrate — plan ({today()})\n")
+    print(f"kit instalado: {VERSION} · declarado por el repo: {config.kit_version}\n")
+    problems = 0
+
+    if config.kit_version != VERSION:
+        problems += 1
+        print("## Evergreen — la config está desincronizada\n")
+        print(f"`kit_version: {config.kit_version}` ≠ kit {VERSION}. Un repo "
+              "desincronizado **no está sano** (spec §9.3): correr `kit-init`, que "
+              "es el runner de versiones y actualiza la config in-place.\n")
+
+    stale = stale_derived(config)
+    print("## Derivados\n")
+    if stale:
+        problems += 1
+        for path in stale:
+            print(f"- desactualizado: `{path}`")
+        print("\n→ `migrate derived --apply` los regenera (§9.1: los derivados se "
+              "regeneran, jamás se editan).\n")
+    else:
+        print("Tablero, vistas de registry e índice en sintonía con sus fuentes.\n")
+
+    print("## Records de lectura — supersesión mecánica (OPT-IN)\n")
+    candidates = dialect_candidates(config)
+    if candidates:
+        problems += 1
+        for unit_id, record, counts in candidates:
+            detail = " · ".join(f"{name}: {count}" for name, count in counts.items()
+                                if count)
+            print(f"- `{config.relative(record)}` — {detail}")
+        print("\n→ `migrate relabel UNIT --pass vocab` muestra el diff; con `--apply` "
+              "emite el `.vN`. **El record viejo no se toca**: queda superado y "
+              "marcado (§9.1).\n")
+    else:
+        print("Ningún record vigente usa vocabulario histórico. Un record ya "
+              "canónico NO se supersede «por consistencia» (§9.1).\n")
+
+    print("## Verbatim bronze legado — reubicación (OPT-IN)\n")
+    legacy = legacy_dirs(config)
+    if legacy:
+        problems += 1
+        for directory in legacy:
+            count = sum(1 for path in directory.rglob("*") if path.is_file())
+            print(f"- `{config.relative(directory)}/` — {count} archivo(s)")
+        print("\n→ `migrate relocate <dir> --class <clase>` reubica a la casa real. "
+              "**Reubicar no es reescribir**: el `sha256` no cambia, y eso es lo que "
+              "hace verificable el pase (§9.1).\n")
+    else:
+        print("Sin bandejas legadas con contenido.\n")
+
+    expired = freshness.expired(freshness.expiries(config))
+    due = freshness.expired(freshness.cadences(config))
+    if expired or due:
+        print("## Frescura\n")
+        print(f"{len(expired)} hallazgo(s) vencido(s) y {len(due)} cadencia(s) "
+              "cumplida(s). **No es trabajo de `/migrate`**: la recurrencia produce "
+              "investigación nueva, no relabel — correr `check-recurrence` (§6).\n")
+
+    print("---\n")
+    print(f"{problems} frente(s) con trabajo pendiente. Este comando no escribió "
+          "nada: cada pase se pide aparte y con `--apply`.")
+
+
+# ——— derivados ———
+
+def mode_derived(config, argv: list[str]) -> None:
+    _, flags = parse_flags(argv, {"--apply": False})
+    stale = stale_derived(config)
+    if not stale:
+        print("derivados en sintonía: nada que regenerar.")
+        return
+    if not flags["--apply"]:
+        for path in stale:
+            print(f"desactualizado: {path}")
+        print("\n(dry-run) `migrate derived --apply` los regenera.")
+        return
+
+    config.registry_file("status").write_text(build_board(config), encoding="utf-8")
+    index_path(config).write_text(build_index(config), encoding="utf-8")
+    written = store.render_all(config, COMMAND) + [
+        config.relative(config.registry_file("status")),
+        config.relative(index_path(config)),
+    ]
+    for path in written:
+        print(f"regenerado: {path}")
+    print("\nSin rastro en el registry de migraciones: regenerar un derivado no es "
+          "una migración de contenido — el derivado no afirma nada propio (§0.2 #1).")
+
+
+# ——— supersesión mecánica ———
+
+def next_version(unit_dir: Path, stem: str) -> int:
+    numbers = [int(VERSIONED_RE.search(path.name).group(1))
+               for path in unit_dir.glob(f"{stem}.v*.md")
+               if VERSIONED_RE.search(path.name)]
+    return max(numbers, default=1) + 1
+
+
+def mode_relabel(config, argv: list[str]) -> None:
+    positional, flags = parse_flags(argv, {"--record": "02-findings",
+                                           "--pass": "vocab", "--apply": False})
+    if len(positional) != 1 or not is_valid_unit_id(config, positional[0]):
+        fail(USAGE)
+    unit_id, stem, pass_name = positional[0], flags["--record"], flags["--pass"]
+    if stem not in READ_RECORDS:
+        fail(f"--record {stem}: los records de lectura son {list(READ_RECORDS)}. El "
+             "verbatim bronze JAMÁS se reescribe (spec §9.1).")
+    if pass_name not in relabel.PASSES:
+        fail(f"--pass {pass_name}: los pases mecánicos son {list(relabel.PASSES)}")
+
+    unit_dir = find_unit_dir(config, unit_id)
+    current = latest_artifact(unit_dir, stem)
+    if not current.exists():
+        fail(f"{config.relative(current)}: no existe")
+    original = current.read_text(encoding="utf-8")
+
+    found = relabel.substitutions(original, pass_name)
+    if not found:
+        print(f"{config.relative(current)}: sin vocabulario histórico del pase "
+              f"`{pass_name}` — **no se supersede**. Una migración jamás produce "
+              "supersesiones vacías: un record ya canónico no se supersede por "
+              "consistencia (spec §9.1).")
+        return
+
+    relabelled, log = relabel.apply_substitutions(original, found)
+    if not relabel.verify(original, relabelled, log):
+        fail("round-trip FALLIDO: el texto nuevo no reconstruye el original desde el "
+             "registro de sustituciones. El pase NO es puramente mecánico y se "
+             "aborta — un record no se toca sin evidencia (spec §9.1).")
+    final = relabel.with_supersedes(relabelled, current.name)
+
+    version = next_version(unit_dir, stem)
+    target = unit_dir / f"{stem}.v{version}.md"
+    changes = sorted({f"{old} → {new}" for _, old, new in log})
+
+    print(f"## {config.relative(current)} → {config.relative(target)}\n")
+    show_diff(original, final, current.name)
+    print(f"\nround-trip: OK — {len(log)} sustitución(es) "
+          f"({', '.join(changes)}); ningún otro byte cambia.")
+    print("Se agrega además UNA línea de frontmatter: `supersedes: "
+          f"{current.name}` (la supersesión es una operación declarada, §0.2 #2).")
+
+    if not flags["--apply"]:
+        print("\n(dry-run) El pase es **opt-in del humano, con el diff a la vista**: "
+              "re-corré con `--apply` si lo aceptás.")
+        return
+    if target.exists():
+        fail(f"{config.relative(target)}: ya existe — los records no se pisan")
+
+    git = Git(config.root)
+    git.require_clean_index()
+    target.write_text(final, encoding="utf-8")
+    note = sidecar.annotate(current, GLOSSARY_NOTE, f"relabel:{pass_name}",
+                            superseded_by=target.name)
+    store.append(config, "supersessions", [{
+        "date": today(), "superseded": f"{unit_dir.name}/{current.name}",
+        "superseded_by": f"{unit_dir.name}/{target.name}",
+        "reason": (f"supersesión mecánica — migración a kit {VERSION}, pase "
+                   f"`{pass_name}`; round-trip verificado"),
+    }], COMMAND)
+    record_pass(
+        config, f"relabel:{pass_name}",
+        f"{unit_id}: {current.name} → {target.name} ({len(log)} etiqueta(s))",
+        changes,
+        "round-trip byte a byte desde el registro de sustituciones; el diff es la "
+        "evidencia y quedó en el commit",
+        "el record superado NO se editó (solo se anotó su sidecar); el verbatim "
+        "bronze de la unidad queda intacto (spec §9.1)")
+
+    paths = [config.relative(target), config.relative(note),
+             config.relative(store.data_path(config, reg.SUPERSESSIONS)),
+             config.relative(store.view_path(config, reg.SUPERSESSIONS)),
+             config.relative(store.data_path(config, reg.MIGRATIONS)),
+             config.relative(store.view_path(config, reg.MIGRATIONS))]
+    commit(git, config, paths,
+           f"chore: migrate relabel {unit_id} {stem} → v{version} ({pass_name})")
+    print("\nRastro doble dejado (spec §9.2): entrada en el registry de migraciones "
+          f"+ anotación en `{config.relative(note)}`.")
+
+
+# ——— reubicación de bronze legado ———
+
+def relocation_target(config, flags: dict, source: Path) -> Path:
+    if flags["--hard-doc"]:
+        return config.hard_docs / sane_name(source.name)
+    source_class = flags["--class"]
+    if not source_class:
+        fail("destino ausente: `--class CLASE` (o `--hard-doc`). La clase sale del "
+             f"enum cerrado de spec §2.1 ({list(vocab.EVIDENCE_CLASSES)}) y **no se "
+             "adivina**: ante ambigüedad, PREGUNTÁ AL HUMANO (§2.6).")
+    if source_class not in vocab.EVIDENCE_CLASSES:
+        fail(f"--class {source_class}: clase desconocida. El enum es "
+             f"{list(vocab.EVIDENCE_CLASSES)} + `{vocab.HARD_DOC_CLASS}` (que va con "
+             "`--hard-doc`). No hay carpeta de sobrantes.")
+    if flags["--unit"]:
+        if not is_valid_unit_id(config, flags["--unit"]):
+            fail(f"--unit {flags['--unit']}: fuera de la gramática de IDs del repo")
+        return find_unit_dir(config, flags["--unit"]) / "raw" / sane_name(source.name)
+    return config.evidence / source_class / sane_name(source.name)
+
+
+def mode_relocate(config, argv: list[str]) -> None:
+    positional, flags = parse_flags(argv, {"--class": None, "--unit": None,
+                                           "--hard-doc": False, "--apply": False})
+    if len(positional) != 1:
+        fail(USAGE)
+    origin = (config.root / positional[0]).resolve()
+    if not origin.exists():
+        fail(f"{positional[0]}: no existe")
+    sources = sorted(path for path in ([origin] if origin.is_file()
+                                       else origin.rglob("*")) if path.is_file())
+    if not sources:
+        fail(f"{positional[0]}: sin archivos que reubicar")
+
+    moves = []
+    for source in sources:
+        if source.name.endswith(sidecar.SUFFIX):
+            continue  # el sidecar viaja con su bronze, no aparte
+        target = relocation_target(config, flags, source)
+        digest = sha256(source)
+        if target.exists():
+            fail(f"{config.relative(target)}: ya existe — el bronze no se pisa; "
+                 "renombrá (sufijo `-v2`) y re-corré")
+        moves.append((source, target, digest))
+
+    source_class = vocab.HARD_DOC_CLASS if flags["--hard-doc"] else flags["--class"]
+    print(f"## Reubicación de bronze legado → `{source_class}`\n")
+    for source, target, digest in moves:
+        print(f"- `{config.relative(source)}` → `{config.relative(target)}`  "
+              f"(sha256 {digest[:12]})")
+    print("\n**Reubicar no es reescribir** (spec §9.1): se mueve el archivo, no se "
+          "toca un byte; el `sha256` sigue siendo el mismo antes y después, y eso es "
+          "lo que hace verificable el pase.")
+
+    if not flags["--apply"]:
+        print("\n(dry-run) Es opt-in del humano: re-corré con `--apply`.")
+        return
+
+    git = Git(config.root)
+    git.require_clean_index()
+    written, changes = [], []
+    for source, target, digest in moves:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        git("mv", "--", config.relative(source), config.relative(target))
+        after = sha256(target)
+        if after != digest:
+            fail(f"{config.relative(target)}: el sha256 cambió durante la reubicación "
+                 f"({digest[:12]} → {after[:12]}) — ABORTADO. Nada de esto es "
+                 "aceptable: el verbatim es el rastro de auditoría.")
+        note = sidecar.path_for(target)
+        if not note.exists():
+            note.write_text(sidecar.provenance(
+                origin=config.relative(source), source_class=source_class,
+                digest=digest,
+                note=("reubicado desde bandeja legada por `/migrate`; contenido "
+                      "intacto — " + GLOSSARY_NOTE),
+                kit_version=VERSION), encoding="utf-8")
+        else:
+            sidecar.annotate(target, GLOSSARY_NOTE, "relocate")
+        written += [config.relative(target), config.relative(note)]
+        changes.append(f"{config.relative(source)} → {config.relative(target)} "
+                       f"(sha256 {digest[:12]})")
+
+    record_pass(
+        config, "relocate",
+        f"{len(moves)} archivo(s) de bronze legado reubicado(s) a su casa real",
+        changes,
+        "sha256 idéntico antes y después de cada movimiento; git registra rename "
+        "puro (contenido sin cambios)",
+        "el contenido del verbatim NO se tocó, y la reubicación no habilita ninguna "
+        "edición (spec §9.1); la ruta legada sigue declarada en "
+        "`records.extra_immutable_paths` hasta que el humano la retire")
+    written += [config.relative(store.data_path(config, reg.MIGRATIONS)),
+                config.relative(store.view_path(config, reg.MIGRATIONS))]
+    commit(git, config, written,
+           f"chore: migrate relocate — {len(moves)} archivo(s) a su casa real")
+    print("\nRastro doble dejado (spec §9.2): entrada en el registry de migraciones "
+          "+ sidecar de procedencia en cada archivo reubicado.")
+
+
+MODES = {"plan": mode_plan, "derived": mode_derived,
+         "relabel": mode_relabel, "relocate": mode_relocate}
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    mode = argv[0] if argv and not argv[0].startswith("--") else "plan"
+    if mode not in MODES:
+        fail(USAGE)
+    rest = argv[1:] if argv and argv[0] == mode else argv
+    MODES[mode](kitconfig.load(), rest)
+
+
+if __name__ == "__main__":
+    main()

@@ -49,6 +49,27 @@ HISTORICAL_RE = re.compile(
     r"\b(" + "|".join([*HISTORICAL_MATURITY, *HISTORICAL_VOLATILITY]) + r")\b"
 )
 
+#: El enum abreviado por una sesión (spec §13.2). Se lee y se migra; jamás se
+#: emite. Solo se reconoce DENTRO de una anotación — suelto es ruido.
+HISTORICAL_ABBREVIATIONS = {"est": "established", "sup": "supported",
+                            "pla": "plausible", "esp": "speculative"}
+
+#: Todo el dialecto histórico de etiquetas en una sola tabla de lectura: la
+#: consume el pase de supersesión mecánica de `/migrate` (§9.1). `plausible`
+#: aparece idéntico en ambos enums y por eso no produce sustitución.
+HISTORICAL_TOKENS = {**HISTORICAL_MATURITY, **HISTORICAL_VOLATILITY,
+                     **HISTORICAL_ABBREVIATIONS}
+
+#: Etiquetas de corrida del vocabulario histórico (§13.2): `C1`/`CN` = "corrida
+#: N", `PI` = "pasada inicial" = la primera. `S` NO entra: no era una corrida
+#: sino una verificación, y traducirla a `run-NN` falsificaría qué se hizo.
+HISTORICAL_RUN_RE = re.compile(r"\b(C(\d{1,3})|PI)\b")
+
+
+def canonical_run_label(token: str) -> str:
+    number = 1 if token == "PI" else int(token[1:])
+    return f"run-{number:02d}"
+
 
 def historical_dialect(text: str) -> set[str]:
     """Términos del vocabulario histórico presentes en el texto (spec §13.2)."""
