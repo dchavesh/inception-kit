@@ -2,9 +2,10 @@
 """Chequeo de integridad del repo — determinista, sin juicio y sin escribir nada.
 
 Valida: instalación del kit (config, hook, copia vendorizada en sintonía);
-frontmatter y status de protocols; correspondencia dir↔id; grafo de `needs`;
-findings vigentes parseables (madurez + volatilidad por hallazgo);
-supersesiones consistentes (todo `.vN` con `supersedes:` + fila en el registry);
+el set cerrado de registries (spec §12 G6, §4.5); frontmatter y status de
+protocols; correspondencia dir↔id; grafo de `needs`; las tres guardas de la
+postura de contexto (spec §8.3); findings vigentes parseables (madurez +
+volatilidad por hallazgo); supersesiones consistentes y **corpus solo-vigente**;
 unicidad de `con-NN` y `<unit>-reqNN`; y `STATUS.md` fresco.
 
 Exit 0 = sano · exit 1 = problemas (lista completa en stdout).
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import VERSION
 from kitlib import config as kitconfig
 from kitlib import vocab
+from kitlib.config import REGISTRY_FILES
 from kitlib.ids import (latest_artifact, load_units, registry_id_pattern,
                         sub_id_pattern, unit_pattern)
 from kitlib.installation import Installation
@@ -25,6 +27,7 @@ from kitlib.md import numbered_findings, parse_frontmatter
 from kitlib.status import build_board, without_timestamp
 
 VERSIONED_RECORD_GLOB = "*/0[123]-*.v*.md"
+SEALED_STATUSES = ("running", "qa", "done")
 
 
 def check_installation(config, problems: list) -> None:
@@ -42,6 +45,35 @@ def check_installation(config, problems: list) -> None:
     if not config.constitution.exists():
         problems.append(f"{config.relative(config.constitution)}: no existe — el "
                         "framework necesita una constitution ratificada (gate humano)")
+    else:
+        meta, _ = parse_frontmatter(config.constitution.read_text(encoding="utf-8"))
+        if not meta.get("version"):
+            problems.append(f"{config.relative(config.constitution)}: frontmatter sin "
+                            "`version:` — sin ella no hay protocolo de enmienda que "
+                            "aplicar, y el gate del bloque ratificado de la config no "
+                            "puede exigir su bump (spec §4.3, §12 G4)")
+
+
+def check_registries(config, problems: list) -> None:
+    """El set de registries es cerrado y lo fija la spec (§12 G6, §4.5).
+
+    Falta uno ⇒ el flujo que lo escribe no tiene casa. Sobra un `.md` en la
+    carpeta ⇒ es un registry que nadie declaró: una segunda casa en el lugar
+    donde vive la memoria del programa.
+    """
+    if not config.registry.is_dir():
+        problems.append(f"{config.relative(config.registry)}/: no existe — correr `kit-init`")
+        return
+    declared = set(REGISTRY_FILES.values())
+    for name in sorted(declared):
+        if not (config.registry / name).exists():
+            problems.append(f"{config.relative(config.registry / name)}: falta — "
+                            "es uno de los registries del set cerrado (correr `kit-init`)")
+    for path in sorted(config.registry.glob("*.md")):
+        if path.name not in declared:
+            problems.append(f"{config.relative(path)}: registry no declarado — el set "
+                            f"cerrado es {sorted(declared)} (spec §12 G6). Agregar uno "
+                            "exige enmienda de la spec, no un archivo suelto")
 
 
 def check_protocols(units, problems: list) -> None:
@@ -55,6 +87,27 @@ def check_protocols(units, problems: list) -> None:
                 problems.append(f"{unit.id}: need '{need}' no existe")
         if unit.status == "done" and not unit.session:
             problems.append(f"{unit.id}: done sin session sellada")
+
+
+def check_context(config, units, problems: list) -> None:
+    """Guardas de la postura de contexto (spec §8.3).
+
+    1. `clean-room` exige `needs: []` — si una unidad necesita findings ajenos,
+       no es sala limpia; la secuenciación por presupuesto no es un `need`.
+    2. La evidencia de qué recibió una unidad es su `payload.md` sellado, no un
+       campo: desde `running` tiene que existir.
+    (La tercera guarda, corpus solo-vigente, la verifica `check_supersessions`.)
+    """
+    for unit in units.values():
+        if unit.context == "clean-room" and unit.needs:
+            problems.append(f"{unit.id}: `context: clean-room` con needs "
+                            f"{list(unit.needs)} — sala limpia exige `needs: []`: "
+                            "una unidad que necesita findings ajenos no es sala "
+                            "limpia (spec §8.3)")
+        if unit.status in SEALED_STATUSES and not (unit.dir / "payload.md").exists():
+            problems.append(f"{unit.id}: en `{unit.status}` sin `payload.md` — el "
+                            "payload sellado es la evidencia de qué recibió la "
+                            "unidad, y `/launch` lo commitea con el sello (spec §8.3)")
 
 
 def check_findings(config, units, problems: list) -> None:
@@ -75,25 +128,64 @@ def check_findings(config, units, problems: list) -> None:
         for number, _, segment in entries:
             annotations = vocab.ANNOTATION_RE.findall(segment)
             if not annotations:
-                problems.append(f"{label}: hallazgo {number} sin etiqueta de madurez parseable")
+                problems.append(f"{label}: hallazgo {number} sin etiqueta de madurez "
+                                f"parseable{legacy_hint(segment)}")
             elif not any(vocab.has_volatility(a) for a in annotations):
-                problems.append(f"{label}: hallazgo {number} sin volatilidad parseable")
+                problems.append(f"{label}: hallazgo {number} sin volatilidad "
+                                f"parseable{legacy_hint(segment)}")
+
+
+def legacy_hint(segment: str) -> str:
+    """Nombra el dialecto histórico en vez de decir solo «no parseable».
+
+    Reconocerlo no es aceptarlo: el record no valida, y migrarlo es supersesión
+    mecánica con opt-in humano (`/migrate`) — jamás una edición del record.
+    """
+    found = vocab.historical_dialect(segment)
+    if not found:
+        return ""
+    return (f" — usa vocabulario histórico ({', '.join(sorted(found))}); el enum "
+            "vigente es inglés (spec §1.6) y el glosario de lectura está en §13.2. "
+            "El record NO se edita: migrarlo es supersesión mecánica con opt-in "
+            "humano (`/migrate`, spec §9.1)")
 
 
 def check_supersessions(config, problems: list) -> None:
+    """Supersesiones consistentes y **corpus solo-vigente** (spec §8.3).
+
+    Lo que viaja en un payload es siempre la versión vigente (mayor `.vN`); un
+    record superado jamás entra. Por eso no alcanza con que cada `.vN` declare
+    a quién supera: **toda versión no vigente tiene que estar declarada como
+    superada en el registry**. Un corpus donde conviven tres versiones sin
+    vigente declarado produce eco por construcción.
+    """
     record = config.registry_file("supersessions")
     text = record.read_text(encoding="utf-8") if record.exists() else ""
+    families: dict[Path, set] = {}
     for versioned in sorted(config.investigations.glob(VERSIONED_RECORD_GLOB)):
         meta, _ = parse_frontmatter(versioned.read_text(encoding="utf-8"))
         label = f"{versioned.parent.name}/{versioned.name}"
+        base = versioned.parent / re.sub(r"\.v\d+\.md$", ".md", versioned.name)
+        families.setdefault(base, set()).add(versioned)
         if not meta.get("supersedes"):
             problems.append(f"{label}: .vN sin 'supersedes:' en frontmatter")
             continue
-        base = versioned.parent / re.sub(r"\.v\d+\.md$", ".md", versioned.name)
         if not base.exists():
             problems.append(f"{label}: el record base superado no existe")
         if versioned.name not in text:
             problems.append(f"{label}: sin fila en {config.relative(record)}")
+
+    for base, versions in sorted(families.items()):
+        current = max(versions, key=lambda path: int(re.search(r"\.v(\d+)\.md$",
+                                                              path.name).group(1)))
+        superseded = [base, *sorted(versions - {current})]
+        for path in superseded:
+            if path.exists() and path.name not in text:
+                problems.append(
+                    f"{path.parent.name}/{path.name}: versión NO vigente sin fila de "
+                    f"supersesión en {config.relative(record)} — la vigente es "
+                    f"{current.name}; el corpus solo-vigente es precondición "
+                    "estructural del payload (spec §8.3)")
 
 
 def check_unique_ids(config, problems: list) -> None:
@@ -127,8 +219,10 @@ def main() -> None:
     config = kitconfig.load()
     problems: list[str] = []
     check_installation(config, problems)
+    check_registries(config, problems)
     units = load_units(config)
     check_protocols(units, problems)
+    check_context(config, units, problems)
     check_findings(config, units, problems)
     check_supersessions(config, problems)
     check_unique_ids(config, problems)
@@ -140,8 +234,9 @@ def main() -> None:
         print(f"\ndoctor: {len(problems)} problema(s) de integridad.")
         sys.exit(1)
     if "--quiet" not in sys.argv:
-        print(f"doctor: repo íntegro ({len(units)} unidad(es) · kit {VERSION}) — "
-              "instalación, protocols, findings, supersesiones, IDs y STATUS consistentes.")
+        print(f"doctor: repo íntegro ({len(units)} unidad(es) · kit {VERSION} · "
+              f"language {config.language}) — instalación, registries, protocols, "
+              "contexto, findings, supersesiones, IDs y STATUS consistentes.")
 
 
 if __name__ == "__main__":
