@@ -7,6 +7,54 @@ El kit se actualiza por **bump de versión**, jamás por cirugía repo por repo.
 Al subir de versión, cada repo consumidor corre `kit-init` (runner de
 migraciones) — principio #7, sintonía por migración.
 
+## [0.4.1] — 2026-08-20
+
+**El tooling se alinea a la spec v0.4 ratificada.** La v0.4 no exigió activación
+—canonizó lo que el kit 0.4.0 ya implementaba—, pero su redacción dejó
+enumerados, uno por uno, los desajustes entre la letra nueva y el tooling
+existente: las **siete notas post-gate** de su acta y las adjudicaciones de
+§14.7. Este pase las implementa y nada más. Cero decisiones de diseño, cero
+cambios a `SPEC.md`.
+
+### Changed
+
+- **El censo del roster reconoce los archivos que exige el ecosistema**
+  (`LICENSE`, `NOTICE`, `CITATION.cff`): §4.5 les declara fila desde la v0.4, así
+  que dejan de salir como **fuera del roster**. La fila la define un **criterio**
+  —lo pide el mundo donde el repo vive, no el framework, y no porta reglas
+  adentro— y su lista es ilustrativa: el censo reconoce la convención, y una
+  convención nueva (`SECURITY.md`, `CODEOWNERS`…) sigue saliendo fuera del roster
+  para que la **adjudique el humano** en el gate de `/normalize`. Inventar el
+  criterio en un script sería juicio automatizado, que es justamente lo que §4.5
+  le prohíbe al chequeo.
+- **Los documentos de plan son roster, no una canasta aparte.** Con la fila de
+  §4.5 (Δ18) desaparece la constancia de "cola de enmiendas": el censo los
+  reporta como lo que son, **records** apuntados por el `plan:` de un protocol.
+- **`normalize retire` se planta ante un plan y ante un archivo del ecosistema.**
+  Consecuencia mecánica de las dos filas nuevas: un plan es record y se supersede
+  con un plan nuevo; un archivo del ecosistema tiene su dueño **fuera del
+  framework** y el ciclo de vida de borrado no lo alcanza.
+- **El gate de adjudicación de vigentes tiene nombre en el kit:
+  `current-adjudication`.** §11.1 le declara la fila pero no fija tokens de gate
+  —los nombres son un playbook por flujo, no un enum cerrado—, así que el nombre
+  lo pone el kit (adjudicado en §14.7). `/normalize` paso 4 lo escribía bajo
+  `map-ratification`, que es el nombre de **otro** gate. Las filas ya escritas no
+  se reescriben: el registry es append-only y se leen por su decisión (§13.2).
+- **`/adopt` deja la fila de su gate.** El paso 7 hacía la adjudicación con el
+  humano y escribía las supersesiones, pero no la fila que §7.4 exige de todo
+  gate consumido. Ahora la escribe — y si el corpus no trae versiones
+  conviviendo, el gate no se disparó y **no se inventa** la fila.
+- **`kit_version`, README y CHANGELOG referencian la spec v0.4** (`ratified`,
+  2026-08-20).
+
+### Removed
+
+- **Las constancias de "encolado para el batch v0.4".** `/adopt` anotaba que la
+  fila de `retro-lenient-deviations.md` estaba encolada y `/distill` que la casa
+  del silver fuera de una unidad no estaba declarada. Ambas cosas están hoy en la
+  letra (Δ15 y Δ16): la constancia dejó de ser cierta, y una línea que enseña
+  algo falso se retira, no se envejece.
+
 ## [0.4.0] — 2026-08-20
 
 **Los flujos de entrada y la destilación.** El framework deja de tener una sola

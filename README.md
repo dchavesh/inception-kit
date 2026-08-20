@@ -2,7 +2,7 @@
 
 El **inception-framework** completo en una sola casa: spec, scripts, skills, plantillas y hook, empaquetado como **plugin de Claude Code** (este repo es también su marketplace) y consumido por los proyectos blite.
 
-**Estado: 0.4.0** — el framework **completo** sobre la `SPEC.md` v0.3 ratificada: a la integridad profunda de 0.3.0 se suman los **tres flujos de entrada** —`/inception` (idea nueva), `/adopt` (corpus artesanal), `/normalize` (repo existente), **y no hay más entradas**— y **`/distill`**, que lleva el bronze no investigativo hasta el conocimiento por el mismo carril de procedencia (ver `CHANGELOG.md`).
+**Estado: 0.4.1** — el framework **completo** sobre la `SPEC.md` **v0.4 ratificada** (2026-08-20): a la integridad profunda de 0.3.0 se suman los **tres flujos de entrada** —`/inception` (idea nueva), `/adopt` (corpus artesanal), `/normalize` (repo existente), **y no hay más entradas**— y **`/distill`**, que lleva el bronze no investigativo hasta el conocimiento por el mismo carril de procedencia. La v0.4 canonizó esa práctica y 0.4.1 alineó el tooling a su letra (ver `CHANGELOG.md`).
 
 **La spec manda.** `SPEC.md` es la constitution del framework y la única fuente normativa: los `§` que citan scripts y skills apuntan ahí. Enmendarla exige bump de `version:`, fila de changelog y gate humano.
 
@@ -13,7 +13,7 @@ El **inception-framework** completo en una sola casa: spec, scripts, skills, pla
 | Hogar remoto | `gitlab.com/blite-systems/tools/inception-kit` (subgrupo `tools` = categoría local — mapeo 1:1, misma descripción que el manifest) |
 | Hogar local | `~/projects/blite/tools/inception-kit` (categoría `blite/tools`) |
 | Nombre | `inception-kit` — repo, plugin y namespace de skills (`/inception-kit:…`); jamás se renombra |
-| Spec | Vive ACÁ (una casa por cosa): `SPEC.md` v0.3, clase constitution, `status: ratified` (2026-08-19). Un repo consumidor no la copia — la referencia por el `kit_version` que declara su config |
+| Spec | Vive ACÁ (una casa por cosa): `SPEC.md` v0.4, clase constitution, `status: ratified` (2026-08-20; la v0.3 lo fue el 2026-08-19). Un repo consumidor no la copia — la referencia por el `kit_version` que declara su config |
 | Distribución | Plugin de Claude Code + marketplace en este mismo repo; instalación/updates por https (credencial oauth de la máquina, verificada; el alias SSH `gitlab-blite` queda para uso interactivo) |
 | Versionado | Semver explícito desde `0.1.0` + `CHANGELOG.md`; update = bump del kit, jamás cirugía por repo; `autoUpdate` encendido en consumidores |
 | Contenido | 16 scripts generalizados (`bin/`) · **11 skills**: los tres flujos de entrada `inception`, `adopt`, `normalize` + `plan`, `launch`, `close`, `synthesis`, `distill`, `ingest`, `migrate`, `status` (el cierre retro-lenient no es skill: lo absorbe el flujo `/adopt`) · plantillas internas al plugin · hook de inmutabilidad + `kit-init` idempotente (única costura por-repo) · skills de claude.ai: `research-preflight`, `research-close`, `new-run` (en `claude-ai-skills/`; el humano las copia a su cuenta) · `framework.config.yaml` por proyecto |

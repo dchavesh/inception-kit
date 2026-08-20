@@ -17,4 +17,4 @@ from .errors import fail
 __all__ = ["Config", "config", "dates", "fail", "freshness", "ids", "load", "md",
            "phrases", "registrystore", "status", "vocab"]
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"

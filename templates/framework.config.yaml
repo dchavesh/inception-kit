@@ -22,7 +22,7 @@
 # Versión del kit que sembró o migró este repo. La mantiene `kit-init`;
 # `doctor` la reporta como ERROR cuando no coincide con el kit instalado
 # (spec §9.3: un repo desincronizado no está sano). No la edites a mano.
-kit_version: 0.4.0
+kit_version: 0.4.1
 
 # Idioma de PROSA de este repo (ISO 639-1). El framework es inglés: nombres de
 # skill y comando, campos de contrato, claves de config, valores de enum,
