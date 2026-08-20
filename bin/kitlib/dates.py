@@ -1,6 +1,6 @@
 """Aritmética de fechas ISO sin dependencias.
 
-`review_by` jamás se almacena (spec §1.5): se deriva de la fecha del record
+`review_by` jamás se almacena (spec §6.1): se deriva de la fecha del record
 más el horizonte de su volatilidad. Este módulo es toda la matemática que
 esa derivación necesita.
 """

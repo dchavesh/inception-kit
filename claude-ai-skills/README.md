@@ -32,3 +32,10 @@ humano las copia una vez y quedan disponibles para todas las sesiones.
   re-copiar las que hayan cambiado (el `CHANGELOG.md` lo dice).
 - **Etiquetas `run-01..run-NN`.** `C1`/`C2` es vocabulario histórico del corpus
   viejo: se lee con glosario, jamás se emite.
+- **Enum en inglés, sin dialecto** (desde el kit 0.2.0): madurez `established` ·
+  `supported` · `plausible` · `speculative`; volatilidad `high` · `medium` ·
+  `low`. Sin fuente ⇒ `speculative`, por definición. El payload pinnea el enum
+  exacto: la sesión no inventa etiquetas locales.
+- **Idioma.** Nombres de sección, columnas, IDs, campos y valores de enum van
+  **siempre en inglés**; la prosa, en el idioma que el payload declare
+  (`language`). Hay **una sola versión** de cada skill: jamás copias traducidas.

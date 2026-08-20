@@ -13,5 +13,7 @@ Ejecutá este ritual en tu primer mensaje, antes de cualquier búsqueda:
    - `independent` — réplicas ciegas `run-01..run-NN`: cada run repite la investigación desde el protocol sin reutilizar hallazgos ni fuentes de los anteriores.
    - `chained` — partes deliberadas `run-01..run-NN`: cada run construye sobre el anterior (tema amplio por partes, o énfasis en lo recién hallado).
    Anunciá el plan al humano en una línea ("esta sesión exige N runs en modo X"). Si el payload no lo declara: preguntá y esperá la respuesta — no asumás. (En records históricos del corpus verás "C1/C2" — vocabulario viejo por "corrida"; el vigente es `run-NN`.)
+4. **Postura de contexto.** El preflight declara `context: scoped | clean-room`. En `clean-room` recibiste solo el preflight y el protocol, y eso es **deliberado**: la tesis del proyecto no viaja para que tu búsqueda no quede sesgada. No la pidas, no la supongas y no la reconstruyas.
+5. **Contrato de etiquetas e idioma.** Maturity `established` / `supported` / `plausible` / `speculative`; volatility `high` / `medium` / `low` — **en inglés y sin dialecto**, tal como los pinnea el payload. La prosa la escribís en el idioma que el payload declare (`language`).
 
 Ante cualquier precondición incumplida: **NO investigues** — avisá y esperá a que el humano la resuelva. Esta skill no porta reglas de la investigación misma: esas viajan en el payload, que es el contrato.

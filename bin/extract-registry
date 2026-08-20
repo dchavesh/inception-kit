@@ -16,7 +16,7 @@ Modo normal:  extract-registry UNIT_ID [--marks FILE]
 
 Modo enmienda:  extract-registry --amend RECORD_ID [--date YYYY-MM-DD]
   Propaga marca de invalidación a toda fila de la RTM cuyo Evidence cite el
-  record enmendado (spec §1.2).
+  record enmendado (spec §0.2 #2).
 """
 import re
 import sys

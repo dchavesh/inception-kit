@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deriva `review_by` = fecha + horizonte(volatilidad) por hallazgo. Lista vencidos.
 
-`review_by` jamás se almacena (spec §1.5). Horizontes: `framework.config.yaml`
+`review_by` jamás se almacena (spec §6.1). Horizontes: `framework.config.yaml`
 (`horizons`), jamás hardcodeados. Fecha del hallazgo: frontmatter `date` de su
 `02-findings` vigente. Volatilidad: la anotación entre paréntesis del hallazgo;
 si menciona más de una (p. ej. «baja–media»), rige la más volátil.
@@ -78,7 +78,7 @@ def main() -> None:
     print(f"\nvencidos: {len(expired)} · sin etiqueta de volatilidad: {len(unlabeled)}")
     if expired:
         sys.stdout.flush()  # la tabla sale primero, aunque stdout esté redirigido
-        print("Vencido sin re-verificar ⇒ baja un nivel de madurez (spec §1.5): "
+        print("Vencido sin re-verificar ⇒ baja un nivel de madurez (spec §6.1): "
               "se refresca o entra degradado — jamás lavado.", file=sys.stderr)
         sys.exit(1)
 

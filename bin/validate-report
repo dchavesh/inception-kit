@@ -121,7 +121,9 @@ def collect_problems(config, unit_id: str) -> list[str]:
     for number, keyword in spec.SECTION_KEYWORDS.items():
         if number not in sections:
             problems.append(f"falta la sección {number} ({keyword})")
-        elif keyword not in sections[number].splitlines()[0]:
+        elif keyword.lower() not in sections[number].splitlines()[0].lower():
+            # El ancla es el nombre inglés del concepto; el resto del encabezado
+            # es prosa y se escribe en el idioma del repo (spec §1.8).
             problems.append(f"sección {number}: encabezado no menciona '{keyword}'")
     if spec.CLAIMS_SECTION in sections:
         check_claims(sections[spec.CLAIMS_SECTION], config, unit_id, problems)
