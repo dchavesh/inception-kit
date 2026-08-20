@@ -1,25 +1,42 @@
-"""Los registries: encabezados, columnas y semillas.
+"""Los nueve registries: schema, régimen y casa. Datos, no markdown.
 
-Cada registry se define UNA vez acá: `kit-init` lo siembra desde esta
-definición y los scripts que le agregan filas usan las mismas columnas. Nadie
-copia un encabezado a mano — un contrato, un lugar, varios lectores.
+Desde el kit 0.3.0 **el registry es un archivo de datos** y el `.md` es su
+**vista generada** (spec §12 G6 norma el *régimen*, no el formato — Preguntas
+al final #2). Los datos viven en `<registry>/data/<name>.jsonl`: **JSON Lines**,
+un objeto por línea.
 
-Los nombres de columna van en inglés (principio #6); la prosa del corpus, no.
+Por qué JSONL y no YAML: append-only es literalmente *agregar una línea*, así
+que el régimen se verifica byte a byte con una comparación de prefijo, sin
+parser y sin ambigüedad de indentación — y `json` es stdlib, con lo que la
+guarda sigue corriendo con git + Python estándar (spec §4.4).
+
+Los tres regímenes de §12 G6 se hacen cumplir **sobre los datos**:
+
+  · **append-only** — el contenido previo no se pisa: el archivo nuevo empieza
+    con el viejo, exacto. Seis registries.
+  · **markable** — la fila no se borra ni cambia lo que afirmó: solo mutan los
+    campos declarados en `markable`. Dos registries.
+  · **derived view** — `STATUS.md` no tiene datos propios: deriva de los
+    protocols y se regenera.
+
+Un contrato, un lugar: acá se declara cada registry UNA vez — `kit-init` lo
+siembra, los scripts le agregan filas y las vistas se renderizan, todo desde
+esta misma definición. Los nombres de campo y de columna van en inglés
+(principio #6); la prosa de la vista, en `language` (§1.8).
 """
 from __future__ import annotations
 
-from .config import Config
+from dataclasses import dataclass, field as dataclass_field
+
+from .config import REGISTRY_FILES, Config
 from .report import REGISTRY_EXTRA_COLUMNS, REQ_COLUMNS
 
-CONFLICT_COLUMNS = ("ID", "Units", "Records", "Description", "Evidence weight",
-                    "Resolution", "Status", "Date")
-#: `Destination` nombra la ruta destino real (unidad · `evidence/<class>/` ·
-#: casa de `hard-doc`) o el puntero externo de un hard-doc que vive afuera —
-#: la bandeja ya no existe (spec §2.6). El esquema no cambió: la columna sí.
-INGEST_COLUMNS = ("Date", "Destination", "Class", "sha256 (12)", "Origin", "Original")
-SUPERSESSION_COLUMNS = ("Superseded record", "Superseded by", "Date", "Reason")
-GATE_COLUMNS = ("Date", "Gate", "Decision", "Amends", "Record out")
-METRICS_FIXED_COLUMNS = ("Date", "Unit")
+REGIME_APPEND_ONLY = "append-only"
+REGIME_MARKABLE = "markable"
+REGIME_DERIVED = "derived view"
+
+DATA_DIR = "data"
+DATA_SUFFIX = ".jsonl"
 
 #: Valores del campo `Status` de la RTM (interfaz del kit, en inglés).
 STATUS_NEW = "new"
@@ -28,123 +45,210 @@ STATUS_CONTRADICTS = "contradicts"
 STATUS_SUPERSEDED = "SUPERSEDED by"
 STATUS_INVALIDATED = "⚠ invalidated"
 
+#: Estado de una fila de conflicto. La spec declara la COLUMNA (§12 G6: «la fila
+#: evoluciona en sus columnas de resolución y status») y no su vocabulario; el
+#: kit lo fija en inglés, como todo valor de enum (principio #6). `resolution`
+#: queda para la prosa de la adjudicación.
+CONFLICT_OPEN = "open"
+CONFLICT_RESOLVED = "resolved"
+CONFLICT_STATUSES = (CONFLICT_OPEN, CONFLICT_RESOLVED)
 
-def table(columns) -> str:
-    return ("| " + " | ".join(columns) + " |\n"
-            + "|" + "|".join("---" for _ in columns) + "|\n")
+#: Dialecto histórico de esa columna, escrito por el kit 0.1.x–0.2.x. Se lee
+#: para migrar la fila (§13.2); jamás se emite.
+HISTORICAL_CONFLICT_STATUS = {"abierto": CONFLICT_OPEN, "resuelto": CONFLICT_RESOLVED}
 
-
-def requirements_seed(config: Config) -> str:
-    return (
-        "# Registry — Requirements (RTM)\n\n"
-        "*Agregada en cada close por `extract-registry`. Las filas jamás se borran: "
-        "una fila superada se marca `SUPERSEDED by <id>`; una enmienda a un record "
-        "citado propaga marca en `Invalidation`.*\n\n"
-        + table(REQ_COLUMNS + REGISTRY_EXTRA_COLUMNS)
-    )
-
-
-def conflicts_seed(config: Config) -> str:
-    return (
-        "# Registry — Conflicts\n\n"
-        "*Contradicciones entre corridas y entre unidades. Solo se anotan acá: se "
-        "resuelven en la síntesis o en el gate que cada fila asigne. IDs `con-NN`, "
-        "permanentes, jamás reutilizados.*\n\n"
-        + table(CONFLICT_COLUMNS)
-    )
+KIND_TEXT, KIND_DATE, KIND_INT, KIND_LIST = "text", "date", "int", "list"
 
 
-def metrics_seed(config: Config) -> str:
-    columns = METRICS_FIXED_COLUMNS + tuple(c.label for c in config.metric_columns)
-    return (
-        "# Registry — Metrics\n\n"
-        f"<!-- metrics-version: {config.metrics_version} -->\n\n"
-        "*Record append-only: una fila por close, vía `append-metrics`. QA que no mide "
-        "nada es ceremonia. Las columnas las define `metrics.columns` de "
-        "`framework.config.yaml`; cambiar la definición sube `metrics.version` y lo "
-        "ejecuta `/migrate`, jamás una edición a mano.*\n\n"
-        + table(columns)
-    )
+@dataclass(frozen=True)
+class Field:
+    key: str
+    label: str
+    kind: str = KIND_TEXT
+    required: bool = True
+    #: Set cerrado de valores admitidos, cuando la columna es un enum del
+    #: framework. Vacío = texto libre (prosa, en `language`).
+    choices: tuple = dataclass_field(default_factory=tuple)
 
 
-def supersessions_seed(config: Config) -> str:
-    return (
-        "# Registry — Supersessions\n\n"
-        "*Record append-only. La supersesión es una operación, no una convención "
-        "(spec §0.2 #2): el record superado JAMÁS se borra ni se edita — queda marcado "
-        "acá, y los scripts resuelven siempre a la versión vigente (mayor "
-        "`NN-kind.vN.md`, o la base). Consumidor: la síntesis y cualquier lector de un "
-        "record superado; momento: antes de citar.*\n\n"
-        + table(SUPERSESSION_COLUMNS)
-    )
+@dataclass(frozen=True)
+class Registry:
+    """Un registry: dónde vive, bajo qué régimen y con qué campos."""
+    name: str
+    regime: str
+    fields: tuple
+    spec: str
+    key: str | None = None
+    markable: tuple = dataclass_field(default_factory=tuple)
+
+    @property
+    def view_name(self) -> str:
+        return REGISTRY_FILES[self.name]
+
+    @property
+    def data_name(self) -> str:
+        return self.view_name.removesuffix(".md") + DATA_SUFFIX
+
+    @property
+    def labels(self) -> tuple:
+        return tuple(item.label for item in self.fields)
+
+    @property
+    def keys(self) -> tuple:
+        return tuple(item.key for item in self.fields)
+
+    def field(self, key: str) -> Field | None:
+        return next((item for item in self.fields if item.key == key), None)
 
 
-def ingest_log_seed(config: Config) -> str:
-    return (
-        "# Registry — Ingest log\n\n"
-        "*Record append-only: una fila por archivo ingerido vía `ingest`. La "
-        "procedencia de lo que entra al repo se registra acá; el original se borra "
-        "solo tras verificar la copia contra el remoto. Toda ingesta declara "
-        "destino (spec §2.6) y `Destination` nombra la ruta destino real. Acá vive "
-        "también la fila del `hard-doc` que quedó FUERA del repo: puntero + "
-        "`sha256` + sidecar (§2.3) — la ausencia del binario nunca es ausencia de "
-        "procedencia.*\n\n"
-        + table(INGEST_COLUMNS)
-    )
+def _fields(*rows) -> tuple:
+    return tuple(Field(*row) for row in rows)
 
 
-def gates_seed(config: Config) -> str:
-    return (
-        "# Registry — Gates\n\n"
-        "*Record append-only: un registro por **gate consumido** (spec §7.4, §12 "
-        "G6) — cuál, cuándo, qué se decidió y qué enmendó. Antes este rastro estaba "
-        "disperso entre CLAUDE.md y changelogs; acá tiene casa. Un acta de "
-        "ratificación agrupa gates sin que ninguno pierda su autoridad: se anota "
-        "una fila por gate del acta. Consumidor: la síntesis, la auditoría y quien "
-        "redacte la próxima versión de la constitution; momento: al resolver o "
-        "auditar un gate.*\n\n"
-        + table(GATE_COLUMNS)
-    )
+METRICS_FIXED = _fields(("date", "Date", KIND_DATE), ("unit", "Unit"))
+
+INGEST_LOG = Registry(
+    name="ingest_log", regime=REGIME_APPEND_ONLY, spec="§2.6, §12 G6",
+    fields=_fields(
+        ("date", "Date", KIND_DATE),
+        # Ruta destino real (unidad · `evidence/<class>/` · casa de `hard-doc`)
+        # o el puntero externo de un hard-doc que vive afuera — no hay bandeja.
+        ("destination", "Destination"),
+        ("class", "Class"),
+        ("sha256", "sha256"),
+        ("origin", "Origin"),
+        ("outcome", "Original"),
+    ),
+)
+
+SUPERSESSIONS = Registry(
+    name="supersessions", regime=REGIME_APPEND_ONLY, spec="§0.2 #2, §12 G6",
+    fields=_fields(
+        ("date", "Date", KIND_DATE),
+        ("superseded", "Superseded record"),
+        ("superseded_by", "Superseded by"),
+        ("reason", "Reason"),
+    ),
+)
+
+MIGRATIONS = Registry(
+    name="migrations", regime=REGIME_APPEND_ONLY, spec="§9.2, §12 G6",
+    fields=_fields(
+        ("date", "Date", KIND_DATE),
+        ("pass", "Pass"),
+        ("from_version", "From"),
+        ("to_version", "To"),
+        ("summary", "What changed"),
+        ("changes", "Detail", KIND_LIST, False),
+        ("verification", "Verification"),
+        ("out_of_scope", "Out of scope, and why", KIND_TEXT, False),
+    ),
+)
+
+QA_AUDITS = Registry(
+    name="qa_audits", regime=REGIME_APPEND_ONLY, spec="§10.2, §12 G6",
+    fields=_fields(
+        ("date", "Date", KIND_DATE),
+        ("unit", "Unit"),
+        ("method", "Method"),
+        ("sample", "Sample"),
+        ("result", "Result"),
+        ("notes", "Notes", KIND_TEXT, False),
+    ),
+)
+
+#: Los gates que instancia el playbook de inception de la spec (§11.1). Son
+#: **nombres canónicos recomendados**, no un enum cerrado del schema: §11.1 dice
+#: que qué gates existen es un playbook por tipo de flujo, y el kit no congela
+#: un playbook. Las skills escriben estos; una fila histórica con otro texto se
+#: lee igual (§13.2) — el registry es append-only y no se reescribe.
+GATE_KINDS = ("constitution-ratification", "map-ratification", "report-qa",
+              "kill-criteria", "synthesis", "ratified-block-amendment")
+SYNTHESIS_GATE = "synthesis"
+#: Cómo se reconoce el gate de síntesis, incluido el dialecto con que pudo
+#: haberse escrito antes de que existiera el nombre canónico.
+SYNTHESIS_ALIASES = (SYNTHESIS_GATE, "sintesis", "síntesis")
 
 
-def migrations_seed(config: Config) -> str:
-    return (
-        "# Registry — Migrations\n\n"
-        "*Record append-only (principio #7 — sintonía por migración): una entrada por "
-        "pase de migración, con qué cambió, cuándo, a qué versión y cómo se verificó. "
-        "La incisión de vocabulario va al sidecar del record migrado, jamás dentro del "
-        "verbatim: un byte añadido rompe la cadena sha256 que lo hace auditable. "
-        "Consumidor: quien lea un record superado o audite una migración; momento: "
-        "antes de citar vocabulario.*\n"
-    )
+def is_synthesis_gate(value) -> bool:
+    text = str(value or "").strip().lower()
+    return any(alias in text for alias in SYNTHESIS_ALIASES)
 
 
-def qa_audits_seed(config: Config) -> str:
-    return (
-        "# Registry — QA Audits\n\n"
-        "*Record append-only: el rastro reproducible de la auditoría de afirmaciones "
-        "de cada `/close` (spec §10.2 — toda verificación deja rastro como record). El "
-        "resumen cuantitativo vive en `metrics.md`; acá vive el detalle de qué se "
-        "probó, cómo y con qué resultado. Consumidor: la síntesis y el humano al "
-        "ponderar la madurez de una unidad.*\n"
-    )
+GATES = Registry(
+    name="gates", regime=REGIME_APPEND_ONLY, spec="§7.4, §11.1, §12 G6",
+    fields=_fields(
+        ("date", "Date", KIND_DATE),
+        ("gate", "Gate"),
+        ("decision", "Decision"),
+        ("amends", "Amends", KIND_TEXT, False),
+        ("record_out", "Record out"),
+    ),
+)
+
+CONFLICTS = Registry(
+    name="conflicts", regime=REGIME_MARKABLE, spec="§1.5, §12 G6",
+    key="id", markable=("evidence_weight", "resolution", "status"),
+    fields=_fields(
+        ("id", "ID"),
+        ("units", "Units", KIND_LIST),
+        ("records", "Records"),
+        ("description", "Description"),
+        ("evidence_weight", "Evidence weight", KIND_TEXT, False),
+        ("resolution", "Resolution", KIND_TEXT, False),
+        ("status", "Status", KIND_TEXT, True, CONFLICT_STATUSES),
+        ("date", "Date", KIND_DATE),
+    ),
+)
+
+#: Claves de la RTM, alineadas 1:1 con las columnas del report (`kitlib.report`)
+#: más las dos que agrega el registry. Las etiquetas salen de ahí: un contrato,
+#: un lugar.
+REQUIREMENT_KEYS = ("id", "requirement", "why", "evidence", "scope", "area",
+                    "status", "invalidation")
+
+REQUIREMENTS = Registry(
+    name="requirements", regime=REGIME_MARKABLE, spec="§10.2, §12 G6",
+    key="id", markable=("status", "invalidation"),
+    fields=tuple(
+        Field(key, label, KIND_TEXT, key != "invalidation")
+        for key, label in zip(REQUIREMENT_KEYS, REQ_COLUMNS + REGISTRY_EXTRA_COLUMNS)
+    ),
+)
+
+STATUS = Registry(
+    name="status", regime=REGIME_DERIVED, spec="§12 G6",
+    fields=(),
+)
+
+#: Los registries con datos propios. `status` deriva de los protocols.
+DATA_REGISTRIES = (INGEST_LOG, SUPERSESSIONS, MIGRATIONS, QA_AUDITS, GATES,
+                   CONFLICTS, REQUIREMENTS)
+
+#: Registries append-only (spec §12, G6). Lo declara la vista y lo hace cumplir
+#: la guarda **sobre el archivo de datos**.
+APPEND_ONLY = tuple(item.name for item in DATA_REGISTRIES
+                    if item.regime == REGIME_APPEND_ONLY) + ("metrics",)
+MARKABLE = tuple(item.name for item in DATA_REGISTRIES
+                 if item.regime == REGIME_MARKABLE)
 
 
-#: Registries append-only (spec §12, G6): su propio encabezado lo declara, y el
-#: hook lo hace cumplir. `requirements` y `conflicts` NO están: son record
-#: **marcable** — sus filas se marcan (fila superada, conflicto resuelto) sin
-#: borrarse jamás. `status` tampoco: es vista derivada, no record.
-APPEND_ONLY = ("metrics", "ingest_log", "supersessions", "migrations", "qa_audits",
-               "gates")
+def metrics_registry(config: Config) -> Registry:
+    """Las columnas de métricas las declara `metrics.columns` de la config."""
+    columns = tuple(Field(column.key, column.label) for column in config.metric_columns)
+    return Registry(name="metrics", regime=REGIME_APPEND_ONLY, spec="§10.2, §12 G6",
+                    fields=METRICS_FIXED + columns)
 
-#: nombre lógico → función que lo siembra
-SEEDS = {
-    "requirements": requirements_seed,
-    "conflicts": conflicts_seed,
-    "metrics": metrics_seed,
-    "supersessions": supersessions_seed,
-    "ingest_log": ingest_log_seed,
-    "migrations": migrations_seed,
-    "qa_audits": qa_audits_seed,
-    "gates": gates_seed,
-}
+
+def schemas(config: Config) -> dict:
+    """nombre lógico → schema, con `metrics` resuelto contra la config."""
+    everything = (*DATA_REGISTRIES, metrics_registry(config), STATUS)
+    return {item.name: item for item in everything}
+
+
+def data_registries(config: Config) -> tuple:
+    """Los ocho con archivo de datos, en orden estable."""
+    resolved = schemas(config)
+    return tuple(resolved[name] for name in
+                 ("requirements", "conflicts", "metrics", "supersessions",
+                  "ingest_log", "migrations", "qa_audits", "gates"))

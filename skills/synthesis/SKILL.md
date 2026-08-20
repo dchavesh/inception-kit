@@ -40,5 +40,8 @@ que lo sostiene.
 supera una síntesis anterior, entra por supersesión declarada — jamás
 editando la vieja.
 
-**La síntesis misma es gate humano**, y como todo gate consumido deja su fila en
-`registry/gates.md`: cuál, cuándo, qué se decidió y qué enmendó.
+**La síntesis misma es gate humano**, y como todo gate consumido deja su fila
+con `registry add gates --gate synthesis --decision … --record_out …`: cuál,
+cuándo, qué se decidió y qué enmendó. Esa fila es además lo que el índice
+puerta-de-entrada lee para decir cuál es la **síntesis vigente** — el `.md` del
+registry es vista generada y no se edita a mano.

@@ -2,11 +2,13 @@
 """Chequeo de integridad del repo — determinista, sin juicio y sin escribir nada.
 
 Valida: instalación del kit (config, hook, copia vendorizada en sintonía);
-el set cerrado de registries (spec §12 G6, §4.5); frontmatter y status de
-protocols; correspondencia dir↔id; grafo de `needs`; las tres guardas de la
-postura de contexto (spec §8.3); findings vigentes parseables (madurez +
-volatilidad por hallazgo); supersesiones consistentes y **corpus solo-vigente**;
-unicidad de `con-NN` y `<unit>-reqNN`; y `STATUS.md` fresco.
+el set cerrado de registries y **sus datos contra el schema** (spec §12 G6,
+§4.5); que toda vista derivada esté en sintonía con su fuente (vistas de
+registry, `STATUS.md` e `INDEX.md`); frontmatter y status de protocols;
+correspondencia dir↔id; grafo de `needs`; las tres guardas de la postura de
+contexto (spec §8.3); findings vigentes parseables (madurez + volatilidad por
+hallazgo); supersesiones consistentes y **corpus solo-vigente**; y unicidad de
+`con-NN` y `<unit>-reqNN`.
 
 Exit 0 = sano · exit 1 = problemas (lista completa en stdout).
 Uso: doctor [--quiet]
@@ -18,13 +20,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import VERSION
 from kitlib import config as kitconfig
+from kitlib import registry as reg
+from kitlib import registrystore as store
 from kitlib import vocab
 from kitlib.config import REGISTRY_FILES
 from kitlib.ids import (latest_artifact, load_units, registry_id_pattern,
-                        sub_id_pattern, unit_pattern)
+                        sub_id_pattern)
+from kitlib.indexview import build_index, index_path
 from kitlib.installation import Installation
 from kitlib.md import numbered_findings, parse_frontmatter
-from kitlib.status import build_board, without_timestamp
+from kitlib.phrases import without_stamp
+from kitlib.status import build_board
 
 VERSIONED_RECORD_GLOB = "*/0[123]-*.v*.md"
 SEALED_STATUSES = ("running", "qa", "done")
@@ -57,23 +63,60 @@ def check_installation(config, problems: list) -> None:
 def check_registries(config, problems: list) -> None:
     """El set de registries es cerrado y lo fija la spec (§12 G6, §4.5).
 
-    Falta uno ⇒ el flujo que lo escribe no tiene casa. Sobra un `.md` en la
-    carpeta ⇒ es un registry que nadie declaró: una segunda casa en el lugar
-    donde vive la memoria del programa.
+    Desde el kit 0.3.0 el registry ES el archivo de datos y el `.md` es su
+    vista. Falta uno ⇒ el flujo que lo escribe no tiene casa. Sobra un archivo
+    en la carpeta ⇒ es un registry que nadie declaró: una segunda casa en el
+    lugar donde vive la memoria del programa.
     """
     if not config.registry.is_dir():
         problems.append(f"{config.relative(config.registry)}/: no existe — correr `kit-init`")
         return
-    declared = set(REGISTRY_FILES.values())
-    for name in sorted(declared):
+    declared_views = set(REGISTRY_FILES.values())
+    declared_data = {schema.data_name for schema in reg.data_registries(config)}
+
+    for name in sorted(declared_views):
         if not (config.registry / name).exists():
             problems.append(f"{config.relative(config.registry / name)}: falta — "
                             "es uno de los registries del set cerrado (correr `kit-init`)")
     for path in sorted(config.registry.glob("*.md")):
-        if path.name not in declared:
+        if path.name not in declared_views:
             problems.append(f"{config.relative(path)}: registry no declarado — el set "
-                            f"cerrado es {sorted(declared)} (spec §12 G6). Agregar uno "
-                            "exige enmienda de la spec, no un archivo suelto")
+                            f"cerrado es {sorted(declared_views)} (spec §12 G6). "
+                            "Agregar uno exige enmienda de la spec, no un archivo suelto")
+
+    data_dir = store.data_dir(config)
+    if not data_dir.is_dir():
+        problems.append(f"{config.relative(data_dir)}/: no existe — los registries son "
+                        "datos desde el kit 0.3.0 (correr `kit-init`)")
+        return
+    for name in sorted(declared_data):
+        if not (data_dir / name).exists():
+            problems.append(f"{config.relative(data_dir / name)}: falta el archivo de "
+                            "datos del registry (correr `kit-init`)")
+    for path in sorted(data_dir.iterdir()):
+        if path.is_file() and path.name not in declared_data:
+            problems.append(f"{config.relative(path)}: archivo de datos no declarado — "
+                            f"el set cerrado es {sorted(declared_data)} (spec §12 G6)")
+
+
+def check_registry_data(config, problems: list) -> None:
+    """Los datos, contra el schema; y cada vista, contra su regeneración."""
+    for schema in reg.data_registries(config):
+        path = store.data_path(config, schema)
+        if not path.exists():
+            continue
+        relative = config.relative(path)
+        rows, broken = store.parse(path.read_text(encoding="utf-8"), schema, relative)
+        problems.extend(broken)
+        problems.extend(store.validate(schema, rows, relative))
+        view = store.view_path(config, schema)
+        if not view.exists():
+            continue
+        rendered = store.render(config, schema, rows, "doctor")
+        if without_stamp(view.read_text(encoding="utf-8")) != without_stamp(rendered):
+            problems.append(f"{config.relative(view)}: vista desactualizada respecto de "
+                            f"`{relative}` — es derivada y se regenera "
+                            "(`registry render`), jamás se edita a mano (spec §12 G6)")
 
 
 def check_protocols(units, problems: list) -> None:
@@ -139,7 +182,7 @@ def legacy_hint(segment: str) -> str:
     """Nombra el dialecto histórico en vez de decir solo «no parseable».
 
     Reconocerlo no es aceptarlo: el record no valida, y migrarlo es supersesión
-    mecánica con opt-in humano (`/migrate`) — jamás una edición del record.
+    mecánica con opt-in humano (`migrate relabel`) — jamás una edición.
     """
     found = vocab.historical_dialect(segment)
     if not found:
@@ -147,7 +190,7 @@ def legacy_hint(segment: str) -> str:
     return (f" — usa vocabulario histórico ({', '.join(sorted(found))}); el enum "
             "vigente es inglés (spec §1.6) y el glosario de lectura está en §13.2. "
             "El record NO se edita: migrarlo es supersesión mecánica con opt-in "
-            "humano (`/migrate`, spec §9.1)")
+            "humano (`migrate relabel`, spec §9.1)")
 
 
 def check_supersessions(config, problems: list) -> None:
@@ -156,11 +199,11 @@ def check_supersessions(config, problems: list) -> None:
     Lo que viaja en un payload es siempre la versión vigente (mayor `.vN`); un
     record superado jamás entra. Por eso no alcanza con que cada `.vN` declare
     a quién supera: **toda versión no vigente tiene que estar declarada como
-    superada en el registry**. Un corpus donde conviven tres versiones sin
-    vigente declarado produce eco por construcción.
+    superada en el registry**.
     """
-    record = config.registry_file("supersessions")
-    text = record.read_text(encoding="utf-8") if record.exists() else ""
+    relative = config.relative(store.data_path(config, reg.SUPERSESSIONS))
+    declared = {str(row.get("superseded", "")) for row in store.read(config, reg.SUPERSESSIONS)}
+    names = {Path(entry).name for entry in declared if entry}
     families: dict[Path, set] = {}
     for versioned in sorted(config.investigations.glob(VERSIONED_RECORD_GLOB)):
         meta, _ = parse_frontmatter(versioned.read_text(encoding="utf-8"))
@@ -172,47 +215,51 @@ def check_supersessions(config, problems: list) -> None:
             continue
         if not base.exists():
             problems.append(f"{label}: el record base superado no existe")
-        if versioned.name not in text:
-            problems.append(f"{label}: sin fila en {config.relative(record)}")
 
     for base, versions in sorted(families.items()):
         current = max(versions, key=lambda path: int(re.search(r"\.v(\d+)\.md$",
                                                               path.name).group(1)))
         superseded = [base, *sorted(versions - {current})]
         for path in superseded:
-            if path.exists() and path.name not in text:
+            if path.exists() and path.name not in names:
                 problems.append(
                     f"{path.parent.name}/{path.name}: versión NO vigente sin fila de "
-                    f"supersesión en {config.relative(record)} — la vigente es "
-                    f"{current.name}; el corpus solo-vigente es precondición "
-                    "estructural del payload (spec §8.3)")
+                    f"supersesión en {relative} — la vigente es {current.name}; el "
+                    "corpus solo-vigente es precondición estructural del payload "
+                    "(spec §8.3)")
 
 
 def check_unique_ids(config, problems: list) -> None:
+    """`con-NN` y `<unit>-reqNN` son permanentes y únicos (spec §1.5, §12 G5)."""
     targets = (
-        ("conflicts", registry_id_pattern(config, "con").pattern.strip("^$"), "con-NN"),
-        ("requirements", sub_id_pattern(config, "req").pattern, "<unit>-reqNN"),
+        (reg.CONFLICTS, "id", registry_id_pattern(config, "con"), "con-NN"),
+        (reg.REQUIREMENTS, "id",
+         re.compile(sub_id_pattern(config, "req").pattern + "$"), "<unit>-reqNN"),
     )
-    for name, pattern, label in targets:
-        path = config.registry_file(name)
-        if not path.exists():
-            problems.append(f"{config.relative(path)}: no existe — correr `kit-init`")
-            continue
-        found = re.findall(rf"^\| ({pattern}) \|", path.read_text(encoding="utf-8"), re.M)
-        for identifier in sorted({i for i in found if found.count(i) > 1}):
-            problems.append(f"{path.name}: {identifier} tiene {found.count(identifier)} "
-                            f"filas ({label} son permanentes y únicos)")
+    for schema, key, pattern, label in targets:
+        relative = config.relative(store.data_path(config, schema))
+        for number, row in enumerate(store.read(config, schema), start=1):
+            identifier = str(row.get(key, ""))
+            if not pattern.match(identifier):
+                problems.append(f"{relative}:{number}: `{identifier}` fuera de la "
+                                f"gramática {label} (spec §1.5)")
 
 
-def check_status_board(config, problems: list) -> None:
+def check_derived_views(config, problems: list) -> None:
+    """Tablero e índice: derivados, y por eso comparables con su regeneración."""
     board = config.registry_file("status")
     if not board.exists():
         problems.append(f"{config.relative(board)}: no existe — correr `derive-status`")
-        return
-    current = board.read_text(encoding="utf-8")
-    if without_timestamp(current) != without_timestamp(build_board(config)):
+    elif without_stamp(board.read_text(encoding="utf-8")) != without_stamp(build_board(config)):
         problems.append(f"{config.relative(board)} desactualizado respecto de los "
                         "frontmatter (correr `derive-status`)")
+    index = index_path(config)
+    if not index.exists():
+        problems.append(f"{config.relative(index)}: no existe — el índice "
+                        "puerta-de-entrada es vista generada (correr `derive-index`)")
+    elif without_stamp(index.read_text(encoding="utf-8")) != without_stamp(build_index(config)):
+        problems.append(f"{config.relative(index)} desactualizado respecto de la config, "
+                        "los protocols, los registries y los ADRs (correr `derive-index`)")
 
 
 def main() -> None:
@@ -220,13 +267,14 @@ def main() -> None:
     problems: list[str] = []
     check_installation(config, problems)
     check_registries(config, problems)
+    check_registry_data(config, problems)
     units = load_units(config)
     check_protocols(units, problems)
     check_context(config, units, problems)
     check_findings(config, units, problems)
     check_supersessions(config, problems)
     check_unique_ids(config, problems)
-    check_status_board(config, problems)
+    check_derived_views(config, problems)
 
     if problems:
         for problem in problems:
@@ -235,8 +283,9 @@ def main() -> None:
         sys.exit(1)
     if "--quiet" not in sys.argv:
         print(f"doctor: repo íntegro ({len(units)} unidad(es) · kit {VERSION} · "
-              f"language {config.language}) — instalación, registries, protocols, "
-              "contexto, findings, supersesiones, IDs y STATUS consistentes.")
+              f"language {config.language}) — instalación, registries y su schema, "
+              "protocols, contexto, findings, supersesiones, IDs y vistas derivadas "
+              "(STATUS, INDEX) consistentes.")
 
 
 if __name__ == "__main__":

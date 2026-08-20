@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
-"""Close — una fila por cierre en `registry/metrics.md` (append-only).
+"""Close — una fila por cierre en el registry de métricas (append-only).
 
 Las columnas NO están hardcodeadas: salen de `metrics.columns` de
-`framework.config.yaml`, con `metrics.version` sellada en el encabezado del
-record. Si la definición cambió (versión distinta a la del archivo) el script
-se detiene: reescribir un record append-only bajo otra definición falsifica la
-serie — el cambio de definición lo ejecuta `/migrate`.
+`framework.config.yaml`. Si la definición cambió, las filas ya escritas no
+calzan con el schema vigente y el script se detiene: reescribir un record
+append-only bajo otra definición falsifica la serie — ese cambio lo ejecuta
+`/migrate`, jamás una edición.
+
+Escribe en `registry/data/metrics.jsonl` y regenera su vista. Nadie edita el
+`.md`: es derivado (spec §12 G6).
 
 Tipos de columna: `percent` (0-100, con o sin `%`, más los `tokens` que la
 columna declare, p. ej. `n/a`), `integer`, `text`.
 
 Uso: append-metrics UNIT_ID --<columna> VALOR ... [--date YYYY-MM-DD]
 """
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import config as kitconfig
+from kitlib import registry as reg
+from kitlib import registrystore as store
 from kitlib.dates import today
 from kitlib.errors import fail
 from kitlib.ids import is_valid_unit_id
 
-VERSION_RE = re.compile(r"<!--\s*metrics-version:\s*(\d+)\s*-->")
+COMMAND = "append-metrics"
 
 
 def usage(config) -> str:
@@ -64,16 +68,15 @@ def coerce(column, raw: str) -> str:
     return f"{value:g}%"
 
 
-def check_version(path: Path, expected: int, relative: str) -> None:
-    match = VERSION_RE.search(path.read_text(encoding="utf-8"))
-    if not match:
-        fail(f"{relative}: sin marca `<!-- metrics-version: N -->` — "
-             "correr `kit-init` para sembrar el encabezado del record")
-    if int(match.group(1)) != expected:
-        fail(f"{relative}: el record fue abierto con metrics-version "
-             f"{match.group(1)} y la config declara {expected} — una serie "
-             "append-only no se reescribe bajo otra definición: la migración "
-             "de definiciones la ejecuta `/migrate`")
+def check_definition(schema, rows: list, relative: str) -> None:
+    """Una serie append-only no se reescribe bajo otra definición de columnas."""
+    expected = set(schema.keys)
+    for number, row in enumerate(rows, start=1):
+        if set(row) != expected:
+            fail(f"{relative}:{number}: la fila fue escrita con otras columnas "
+                 f"({sorted(row)}) y `metrics.columns` declara {sorted(expected)} — "
+                 "una serie append-only no se reescribe bajo otra definición: la "
+                 "migración de definiciones la ejecuta `/migrate`")
 
 
 def main() -> None:
@@ -93,21 +96,20 @@ def main() -> None:
     if missing:
         fail(f"faltan flags: {', '.join(missing)}\n{usage(config)}")
 
-    metrics = config.registry_file("metrics")
-    relative = config.relative(metrics)
-    if not metrics.exists():
-        fail(f"{relative}: no existe — correr `kit-init`")
-    check_version(metrics, config.metrics_version, relative)
+    schema = reg.metrics_registry(config)
+    relative = config.relative(store.data_path(config, schema))
+    rows = store.read(config, schema)
+    check_definition(schema, rows, relative)
 
-    values = [coerce(column, flags[column.flag]) for column in columns]
-    date = flags.get("--date", today())
-    text = metrics.read_text(encoding="utf-8")
-    if f"| {unit_id} |" in text:
+    if any(row.get("unit") == unit_id for row in rows):
         print(f"AVISO: {unit_id} ya tiene fila(s) en {relative} — se agrega otra "
               "(append-only: la historia no se pisa).", file=sys.stderr)
-    row = "| " + " | ".join([date, unit_id, *values]) + " |"
-    metrics.write_text(text.rstrip("\n") + "\n" + row + "\n", encoding="utf-8")
-    print(f"{relative}: fila agregada para {unit_id} ({date})")
+
+    row = {"date": flags.get("--date", today()), "unit": unit_id}
+    row.update({column.key: coerce(column, flags[column.flag]) for column in columns})
+    store.append(config, "metrics", [row], COMMAND)
+    print(f"{relative}: fila agregada para {unit_id} ({row['date']}) · vista "
+          f"{config.relative(store.view_path(config, schema))} regenerada")
 
 
 if __name__ == "__main__":

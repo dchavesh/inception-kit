@@ -10,10 +10,11 @@ dependencias). `kit-init` mantiene la copia en sintonía.
 """
 from __future__ import annotations
 
-from . import config, dates, ids, md, status, vocab
+from . import config, dates, freshness, ids, md, phrases, registrystore, status, vocab
 from .config import Config, load
 from .errors import fail
 
-__all__ = ["Config", "config", "dates", "fail", "ids", "load", "md", "status", "vocab"]
+__all__ = ["Config", "config", "dates", "fail", "freshness", "ids", "load", "md",
+           "phrases", "registrystore", "status", "vocab"]
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"

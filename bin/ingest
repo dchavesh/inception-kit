@@ -46,10 +46,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import config as kitconfig
+from kitlib import registry as reg
+from kitlib import registrystore as store
 from kitlib import vocab
 from kitlib.dates import today
 from kitlib.errors import fail
 from kitlib.ids import find_unit_dir, is_valid_unit_id
+
+COMMAND = "ingest"
 
 CHUNK = 1 << 20
 SUBJECT_LIMIT = 120
@@ -302,9 +306,14 @@ def write_landings(config, options: Options, landings: list[Landing],
                            sidecar_text(config, options, landing.source, landing.digest,
                                         landing.source_class, None))
                 written.append(config.relative(landing.sidecar))
-        rows.append(f"| {today()} | {landing.pointer or config.relative(landing.destination)} "
-                    f"| {landing.source_class} | {landing.digest[:12]} "
-                    f"| {landing.source.parent} | {outcome} |")
+        rows.append({
+            "date": today(),
+            "destination": landing.pointer or config.relative(landing.destination),
+            "class": landing.source_class,
+            "sha256": landing.digest[:12],
+            "origin": str(landing.source.parent),
+            "outcome": outcome,
+        })
     return rows, written
 
 
@@ -331,8 +340,9 @@ def write_once(config, path: Path, content: str) -> None:
 
 
 def commit(git: Git, config, written: list[str]) -> None:
-    log = config.registry_file("ingest_log")
-    git("add", "--", *written, config.relative(log))
+    git("add", "--", *written,
+        config.relative(store.data_path(config, reg.INGEST_LOG)),
+        config.relative(store.view_path(config, reg.INGEST_LOG)))
     if not git("diff", "--cached", "--name-only").stdout.strip():
         print("nada nuevo que commitear (solo duplicados) — se verifica el remoto igual")
         return
@@ -374,7 +384,7 @@ def main() -> None:
     options = parse_args(sys.argv[1:])
     destination = resolve_destination(config, options)
 
-    log = config.registry_file("ingest_log")
+    log = store.data_path(config, reg.INGEST_LOG)
     if not log.exists():
         fail(f"{config.relative(log)}: no existe — correr `kit-init`")
 
@@ -388,8 +398,7 @@ def main() -> None:
     git = Git(config.root)
     landings = plan_landings(config, options, destination)
     rows, written = write_landings(config, options, landings, outcome)
-    log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(rows) + "\n",
-                   encoding="utf-8")
+    store.append(config, "ingest_log", rows, COMMAND)
     commit(git, config, written)
     push_and_verify(git, options.remote)
 

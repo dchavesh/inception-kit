@@ -35,12 +35,17 @@ sin confirmación humana explícita.
    determinista + candidatos a eco). El juicio va acá: ¿la fuente existe y dice
    lo que se afirma? ¿la evidencia sostiene la madurez etiquetada? ¿hay fuentes
    del mismo origen contadas como independientes? **Fuente inexistente o
-   afirmación sin soporte ⇒ STOP: gate humano.** Todo queda trazado en el
-   registry de auditorías.
+   afirmación sin soporte ⇒ STOP: gate humano.** El rastro va al registry de
+   auditorías con `registry add qa_audits --unit UNIT_ID --method … --sample …
+   --result …`: los registries son **datos** y su `.md` es la vista generada —
+   nunca se edita a mano ninguno de los dos.
 3. **Kill criteria** — ¿algún hallazgo dispara los kill criteria globales del
    plan o los propios de la unidad? **Cualquier disparo ⇒ STOP: gate humano.**
    Todo gate consumido —este, el de una fuente inexistente, el que sea— deja su
-   fila en `registry/gates.md`: cuál, cuándo, qué se decidió y qué enmendó.
+   fila con `registry add gates --gate <kind> --decision … --record_out …`:
+   cuál, cuándo, qué se decidió y qué enmendó. Los `<kind>` del playbook de
+   inception son `constitution-ratification`, `map-ratification`, `report-qa`,
+   `kill-criteria`, `synthesis` y `ratified-block-amendment` (spec §11.1).
 4. **Commit de records** — `raw/`, `01-report` y `03-sources`. Inmutables desde
    ese commit; el hook lo garantiza.
 5. **Extracción a la RTM** — juzgar cada `<unit>-reqNN` de la sección 7
@@ -61,8 +66,10 @@ sin confirmación humana explícita.
    prosa en el idioma que declare `language`. Tablas-insumo solo referenciadas;
    huecos explícitos. Si hubo varias corridas, conservar la atribución por
    `run-NN`. Commit.
-8. **Cerrar** — `status: qa → done`; correr `derive-status` y `doctor`;
-   anunciar qué unidades quedaron ready y cuál es el próximo gate humano.
+8. **Cerrar** — `status: qa → done`; correr `derive-status`, `derive-index` y
+   `doctor`; anunciar qué unidades quedaron ready y cuál es el próximo gate
+   humano. El tablero y el índice son vistas derivadas: se regeneran al cerrar,
+   jamás se editan.
 
 ## Reglas
 

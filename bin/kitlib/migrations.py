@@ -190,6 +190,12 @@ def migrate_config_to_0_2(config, installation, dry_run: bool) -> list[str]:
     return changes
 
 
+def migrate_registries_to_0_3(config, installation, dry_run: bool) -> list[str]:
+    """Registries 0.2 → 0.3: la tabla markdown pasa a datos y el `.md` a vista."""
+    from . import migrations03
+    return migrations03.convert(config, installation, dry_run)
+
+
 #: Ordenados por versión. 0.1.0 fue la línea base.
 STEPS: tuple[Step, ...] = (
     Step(
@@ -198,6 +204,13 @@ STEPS: tuple[Step, ...] = (
                      "y `hard_docs`, `language`, `context` y el `inbox` fuera del "
                      "contrato"),
         apply=migrate_config_to_0_2,
+    ),
+    Step(
+        version="0.3.0",
+        description=("registries como datos: cada tabla pasa a "
+                     "`registry/data/*.jsonl` y su `.md` queda como vista generada; "
+                     "el régimen de §12 G6 no cambia, solo el formato"),
+        apply=migrate_registries_to_0_3,
     ),
 )
 

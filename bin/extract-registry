@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Close — extracción mecánica de requisitos del report a la RTM del registry.
 
+La RTM es **datos** (`registry/data/requirements.jsonl`) y su `.md` es la vista
+generada: este comando escribe filas, jamás markdown. El régimen es **record
+marcable** (spec §12 G6): las filas no se borran ni cambian lo que afirmaron;
+solo se marcan.
+
 Modo normal:  extract-registry UNIT_ID [--marks FILE]
-  Copia la tabla consolidada del `01-report` vigente a `registry/requirements.md`.
-  El archivo de marks (juicio de la skill `/close`, una línea por requisito):
+  Copia la tabla consolidada del `01-report` vigente a la RTM. El archivo de
+  marks (juicio de la skill `/close`, una línea por requisito):
 
       <unit>-reqNN new
       <unit>-reqNN duplicate:<id>
@@ -12,7 +17,7 @@ Modo normal:  extract-registry UNIT_ID [--marks FILE]
   Sin marks, todo entra como `new`.
   REGLA DURA: `contradicts` sin `supersedes:` ⇒ rechazo total, no se escribe nada.
   Cada `contradicts` además marca la fila superada (jamás la borra) y anota un
-  `con-NN` en `conflicts.md` (solo se anota — se resuelve en la síntesis).
+  `con-NN` en el registry de conflictos (solo se anota — se resuelve en la síntesis).
 
 Modo enmienda:  extract-registry --amend RECORD_ID [--date YYYY-MM-DD]
   Propaga marca de invalidación a toda fila de la RTM cuyo Evidence cite el
@@ -25,14 +30,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import config as kitconfig
 from kitlib import registry as reg
+from kitlib import registrystore as store
 from kitlib import report as spec
 from kitlib.dates import today
 from kitlib.errors import fail
 from kitlib.ids import find_unit_dir, is_valid_unit_id, latest_artifact, sub_id_pattern
-from kitlib.md import (is_separator_row, parse_frontmatter, section,
-                       split_table_row, table_rows)
+from kitlib.md import parse_frontmatter, section, table_rows
 
-RTM_COLUMNS = spec.REQ_COLUMNS + spec.REGISTRY_EXTRA_COLUMNS
+COMMAND = "extract-registry"
 
 
 def marks_pattern(config) -> re.Pattern:
@@ -80,20 +85,10 @@ def read_marks(config, path: str) -> dict[str, dict]:
     return marks
 
 
-def existing_ids(text: str) -> set[str]:
-    ids = set()
-    for line in text.splitlines():
-        if not line.strip().startswith("|"):
-            continue
-        cells = split_table_row(line)
-        if cells and not is_separator_row(cells) and "-req" in cells[0]:
-            ids.add(cells[0])
-    return ids
-
-
-def next_conflict_number(text: str, width: int) -> int:
-    numbers = re.findall(rf"\bcon-(\d{{{width},}})\b", text)
-    return max((int(number) for number in numbers), default=0) + 1
+def next_conflict_number(rows: list, width: int) -> int:
+    numbers = [int(match.group(1)) for row in rows
+               if (match := re.fullmatch(rf"con-(\d{{{width},}})", str(row.get("id", ""))))]
+    return max(numbers, default=0) + 1
 
 
 def status_cell(mark: dict) -> str:
@@ -105,32 +100,13 @@ def status_cell(mark: dict) -> str:
     return reg.STATUS_NEW
 
 
-def mark_superseded(text: str, target: str, by: str, relative: str) -> str:
-    out, touched = [], 0
-    for line in text.splitlines():
-        cells = split_table_row(line) if line.strip().startswith("|") else []
-        if len(cells) == len(RTM_COLUMNS) and cells[0] == target:
-            cells = cells[:-2] + [f"{reg.STATUS_SUPERSEDED} {by}", cells[-1]]
-            out.append("| " + " | ".join(cells) + " |")
-            touched += 1
-        else:
-            out.append(line)
-    if touched == 0:
-        fail(f"supersedes {target}: fila no encontrada en {relative}")
-    return "\n".join(out) + "\n"
-
-
 def mode_extract(config, unit_id: str, marks_path: str | None) -> None:
     rows = read_report_rows(config, unit_id)
     marks = read_marks(config, marks_path) if marks_path else {}
-    requirements = config.registry_file("requirements")
-    relative = config.relative(requirements)
-    if not requirements.exists():
-        fail(f"{relative}: no existe — correr `kit-init`")
-    text = requirements.read_text(encoding="utf-8")
-    known = existing_ids(text)
+    existing = store.read(config, reg.REQUIREMENTS)
+    known = {str(row.get("id")) for row in existing}
 
-    violations, new_lines, supersede_targets, conflict_notes = [], [], {}, []
+    violations, new_rows, supersede_targets, conflict_notes = [], [], {}, []
     for row in rows:
         req_id = row[0]
         if req_id in known:
@@ -144,12 +120,16 @@ def mode_extract(config, unit_id: str, marks_path: str | None) -> None:
         if mark.get("contradicts"):
             supersede_targets[mark["supersedes"]] = req_id
             conflict_notes.append((req_id, mark["contradicts"]))
-        new_lines.append("| " + " | ".join(list(row) + [status_cell(mark), "—"]) + " |")
+        new_rows.append(dict(zip(reg.REQUIREMENT_KEYS,
+                                 list(row) + [status_cell(mark), ""])))
 
     unknown = sorted(set(marks) - {row[0] for row in rows})
     for req_id in unknown:
         violations.append(f"{req_id}: marcado pero ausente de la sección "
                           f"{spec.REQUIREMENTS_SECTION} del report")
+    for target in supersede_targets:
+        if target not in known:
+            violations.append(f"supersedes {target}: no hay fila con ese ID en la RTM")
 
     if violations:
         for violation in violations:
@@ -158,47 +138,49 @@ def mode_extract(config, unit_id: str, marks_path: str | None) -> None:
         sys.exit(1)
 
     for target, by in supersede_targets.items():
-        text = mark_superseded(text, target, by, relative)
-    requirements.write_text(text.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n",
-                            encoding="utf-8")
-    print(f"{unit_id}: {len(new_lines)} requisito(s) agregados a {relative}")
+        store.mark(config, "requirements", target,
+                   {"status": f"{reg.STATUS_SUPERSEDED} {by}"}, COMMAND)
+    store.append(config, "requirements", new_rows, COMMAND)
+    print(f"{unit_id}: {len(new_rows)} requisito(s) agregados a "
+          f"{config.relative(store.view_path(config, reg.REQUIREMENTS))}")
 
     if conflict_notes:
         append_conflicts(config, unit_id, conflict_notes)
 
 
 def append_conflicts(config, unit_id: str, notes: list[tuple[str, str]]) -> None:
-    conflicts = config.registry_file("conflicts")
-    relative = config.relative(conflicts)
-    if not conflicts.exists():
-        fail(f"{relative}: no existe — correr `kit-init`")
-    text = conflicts.read_text(encoding="utf-8")
-    start = next_conflict_number(text, config.id_width)
+    existing = store.read(config, reg.CONFLICTS)
+    start = next_conflict_number(existing, config.id_width)
     rows = []
     for offset, (new_req, old_req) in enumerate(notes):
-        con_id = f"con-{start + offset:0{config.id_width}d}"
-        old_unit = old_req.split("-")[0]
-        rows.append(f"| {con_id} | {unit_id}, {old_unit} | {new_req} ↔ {old_req} "
-                    f"| {new_req} {reg.STATUS_CONTRADICTS} {old_req} (supersedes declarado) "
-                    f"| — | síntesis | abierto | {today()} |")
-    conflicts.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
-    print(f"{unit_id}: {len(rows)} conflicto(s) anotados en {relative}")
+        rows.append({
+            "id": f"con-{start + offset:0{config.id_width}d}",
+            "units": [unit_id, old_req.split("-")[0]],
+            "records": f"{new_req} ↔ {old_req}",
+            "description": (f"{new_req} {reg.STATUS_CONTRADICTS} {old_req} "
+                            "(supersedes declarado)"),
+            "evidence_weight": "",
+            "resolution": "",
+            "status": reg.CONFLICT_OPEN,
+            "date": today(),
+        })
+    store.append(config, "conflicts", rows, COMMAND)
+    print(f"{unit_id}: {len(rows)} conflicto(s) anotados en "
+          f"{config.relative(store.view_path(config, reg.CONFLICTS))}")
 
 
 def mode_amend(config, record_id: str, date: str) -> None:
-    requirements = config.registry_file("requirements")
-    text = requirements.read_text(encoding="utf-8")
-    out, touched = [], 0
-    for line in text.splitlines():
-        cells = split_table_row(line) if line.strip().startswith("|") else []
-        is_data = len(cells) == len(RTM_COLUMNS) and "-req" in cells[0]
-        if is_data and record_id in line and cells[0] != record_id:
-            cells = cells[:-1] + [f"{reg.STATUS_INVALIDATED}: enmienda a {record_id} ({date})"]
-            out.append("| " + " | ".join(cells) + " |")
-            touched += 1
-        else:
-            out.append(line)
-    requirements.write_text("\n".join(out) + "\n", encoding="utf-8")
+    touched = 0
+    for row in store.read(config, reg.REQUIREMENTS):
+        identifier = str(row.get("id"))
+        if identifier == record_id:
+            continue
+        if record_id not in " ".join(str(value) for value in row.values()):
+            continue
+        store.mark(config, "requirements", identifier,
+                   {"invalidation": f"{reg.STATUS_INVALIDATED}: enmienda a "
+                                    f"{record_id} ({date})"}, COMMAND)
+        touched += 1
     print(f"enmienda a {record_id}: {touched} fila(s) marcadas como invalidadas")
 
 

@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""La costura de escritura de los registries-como-datos (spec §12 G6).
+
+Desde el kit 0.3.0 el registry ES un archivo de datos y el `.md` es su vista
+generada. Nadie edita ninguno de los dos a mano: se agrega una fila, se marca
+una fila, o se regenera la vista — y este comando es la única puerta.
+
+  registry add NAME --campo VALOR ...     agrega una fila (append-only)
+  registry mark NAME ID --campo VALOR ... marca una fila (record marcable)
+  registry render [NAME ...]              regenera las vistas desde los datos
+  registry show NAME                      imprime las filas, una por línea
+  registry schema [NAME]                  imprime el schema y el régimen
+
+Los campos con `kind: list` toman valores separados por coma. `--date` toma hoy
+si no se declara. Un campo fuera de schema, un enum fuera de su set cerrado o
+un campo no marcable ⇒ falla sin escribir nada.
+"""
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib import registry as reg
+from kitlib import registrystore as store
+from kitlib.dates import today
+from kitlib.errors import fail
+
+COMMAND = "registry"
+USAGE = ("uso: registry add NAME --campo VALOR ... | registry mark NAME ID "
+         "--campo VALOR ... | registry render [NAME ...] | registry show NAME "
+         "| registry schema [NAME]")
+
+
+def schema_of(config, name: str):
+    schemas = reg.schemas(config)
+    if name not in schemas:
+        fail(f"registry desconocido: {name} — el set es cerrado y lo fija la spec "
+             f"(§12 G6): {sorted(schemas)}")
+    return schemas[name]
+
+
+def parse_flags(argv: list[str]) -> dict:
+    values, index = {}, 0
+    while index < len(argv):
+        arg = argv[index]
+        if not arg.startswith("--"):
+            fail(f"argumento inesperado: {arg}\n{USAGE}")
+        if index + 1 >= len(argv):
+            fail(f"{arg} requiere valor")
+        values[arg[2:].replace("-", "_")] = argv[index + 1]
+        index += 2
+    return values
+
+
+def coerce(schema, flags: dict) -> dict:
+    unknown = sorted(set(flags) - set(schema.keys))
+    if unknown:
+        fail(f"{schema.name}: campo(s) fuera del schema {unknown} — el schema es "
+             f"{list(schema.keys)}")
+    row = {}
+    for key, raw in flags.items():
+        item = schema.field(key)
+        if item.kind == reg.KIND_LIST:
+            row[key] = [part.strip() for part in raw.split(",") if part.strip()]
+        elif item.kind == reg.KIND_INT:
+            if not str(raw).lstrip("-").isdigit():
+                fail(f"{schema.name}.{key}: '{raw}' no es un entero")
+            row[key] = int(raw)
+        else:
+            row[key] = raw
+    if schema.field("date") and "date" not in row:
+        row["date"] = today()
+    return row
+
+
+def mode_add(config, argv: list[str]) -> None:
+    if not argv:
+        fail(USAGE)
+    schema = schema_of(config, argv[0])
+    if schema.regime != reg.REGIME_APPEND_ONLY:
+        fail(f"{schema.name}: régimen `{schema.regime}` — `add` es para los "
+             "append-only; un record marcable se marca con `registry mark`")
+    row = coerce(schema, parse_flags(argv[1:]))
+    store.append(config, schema.name, [row], COMMAND)
+    print(f"{config.relative(store.data_path(config, schema))}: +1 fila · vista "
+          f"{config.relative(store.view_path(config, schema))} regenerada")
+
+
+def mode_mark(config, argv: list[str]) -> None:
+    if len(argv) < 2:
+        fail(USAGE)
+    schema = schema_of(config, argv[0])
+    row = store.mark(config, schema.name, argv[1],
+                     coerce(schema, parse_flags(argv[2:])), COMMAND)
+    print(f"{schema.name}: {argv[1]} marcada — "
+          f"{json.dumps(row, ensure_ascii=False)}")
+
+
+def mode_render(config, argv: list[str]) -> None:
+    names = argv or [item.name for item in reg.data_registries(config)]
+    for name in names:
+        schema_of(config, name)
+    written = store.render_all(config, COMMAND)
+    if not written:
+        print("vistas ya en sintonía con los datos: nada que regenerar")
+        return
+    for path in written:
+        print(f"regenerada: {path}")
+
+
+def mode_show(config, argv: list[str]) -> None:
+    if not argv:
+        fail(USAGE)
+    schema = schema_of(config, argv[0])
+    for row in store.read(config, schema):
+        print(json.dumps(row, ensure_ascii=False))
+
+
+def mode_schema(config, argv: list[str]) -> None:
+    names = argv or [item.name for item in reg.data_registries(config)]
+    for name in names:
+        schema = schema_of(config, name)
+        print(f"{schema.name}  [{schema.regime}]  spec {schema.spec}")
+        for item in schema.fields:
+            marks = []
+            if not item.required:
+                marks.append("opcional")
+            if item.key in schema.markable:
+                marks.append("markable")
+            if item.choices:
+                marks.append("|".join(item.choices))
+            suffix = f"  ({', '.join(marks)})" if marks else ""
+            print(f"  --{item.key:<16} {item.kind:<5} «{item.label}»{suffix}")
+        print()
+
+
+MODES = {"add": mode_add, "mark": mode_mark, "render": mode_render,
+         "show": mode_show, "schema": mode_schema}
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    if not argv or argv[0] not in MODES:
+        fail(USAGE)
+    MODES[argv[0]](kitconfig.load(), argv[1:])
+
+
+if __name__ == "__main__":
+    main()

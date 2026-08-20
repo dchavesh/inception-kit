@@ -27,10 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kitlib import VERSION
 from kitlib import config as kitconfig
 from kitlib import migrations
-from kitlib import registry as reg
-from kitlib.config import CONFIG_NAME, REGISTRY_FILES
+from kitlib import registrystore as store
+from kitlib.config import CONFIG_NAME
 from kitlib.dates import today
 from kitlib.errors import fail
+from kitlib.indexview import build_index, index_path
 from kitlib.installation import HOOK_NAME, SHIM, Installation
 from kitlib.status import build_board
 
@@ -100,20 +101,25 @@ def seed_structure(config, report: Report) -> None:
             (directory / ".gitkeep").touch()
         report.changed(f"{config.relative(directory)}/ (creado)")
 
-    for name, seed in reg.SEEDS.items():
-        path = config.registry / REGISTRY_FILES[name]
-        if path.exists():
-            report.kept(config.relative(path))
-            continue
-        write(path, seed(config), report, config.relative(path))
+    # Los registries son DATOS y el `.md` es su vista (spec §12 G6, kit 0.3.0):
+    # se siembra el archivo de datos vacío y se renderiza la vista desde él.
+    for created in store.seed(config, "kit-init"):
+        report.changed(f"{created} (creado)")
 
-    # El tablero es vista derivada: acá solo se siembra si falta. De ahí en más
-    # lo regenera `derive-status` — jamás se edita a mano.
-    board = config.registry_file("status")
-    if board.exists():
-        report.kept(config.relative(board))
-    else:
-        write(board, build_board(config), report, config.relative(board))
+
+def refresh_derived(root: Path, report: Report) -> None:
+    """Regenera los derivados al FINAL: recién ahí la config está en su versión.
+
+    El tablero y el índice son vistas derivadas (spec §0.2 #1, §4.5): se
+    regeneran y jamás se editan. Se hace después de sellar `kit_version` porque
+    el índice la nombra — generarlo antes lo dejaría desactualizado al nacer.
+    """
+    config = kitconfig.load(root)
+    for path, content in ((config.registry_file("status"), build_board),
+                          (index_path(config), build_index)):
+        write(path, content(config), report, config.relative(path))
+    for regenerated in store.render_all(config, "kit-init"):
+        report.changed(f"{regenerated} (vista regenerada)")
 
 
 def vendor_kit(config, installation: Installation, report: Report) -> None:
@@ -185,25 +191,24 @@ def run_migrations(config, installation: Installation, report: Report,
 
 def log_migration(config, installed: str | None, steps: list, changes: list[str]) -> None:
     """Rastro obligatorio de toda migración (spec §9.2), con lo que quedó fuera."""
-    log = config.registry_file("migrations")
-    entry = [f"\n## {today()} — kit {installed} → {VERSION}\n"]
-    for step in steps:
-        entry.append(f"- **{step.version}** — {step.description}")
-    for change in changes:
-        entry.append(f"  - {change}")
-    entry.append("- **Verificación:** `kit-init` es idempotente — la segunda corrida "
-                 "no cambia nada; `doctor` valida el repo migrado.")
-    entry.append("- **Fuera de alcance, y por qué:** el **verbatim bronze** (`raw/`, "
-                 "`evidence/`, la casa de `hard-doc`, los payloads sellados y los "
-                 "`inbox/` legados) jamás se reescribe — es el rastro de auditoría "
-                 "(spec §9.1). Los **records de lectura** escritos con el enum "
-                 "histórico (`establecido/respaldado/plausible/especulativo` · "
-                 "`alta/media/baja`) se leen con el glosario de spec §13.2 y migran, "
-                 "si migran, por **supersesión mecánica** con opt-in humano: eso es "
-                 "`/migrate` (Fase 3.5), no este runner. Reconciliar un `inbox/` "
-                 "legado con las casas reales es del mismo pase.\n")
-    log.write_text(log.read_text(encoding="utf-8").rstrip("\n") + "\n"
-                   + "\n".join(entry) + "\n", encoding="utf-8")
+    store.append(config, "migrations", [{
+        "date": today(),
+        "pass": "kit-init (runner de versiones)",
+        "from_version": str(installed),
+        "to_version": VERSION,
+        "summary": "; ".join(f"{step.version} — {step.description}" for step in steps),
+        "changes": list(changes),
+        "verification": ("`kit-init` es idempotente — la segunda corrida no cambia "
+                         "nada; `doctor` valida el repo migrado contra el schema"),
+        "out_of_scope": (
+            "El **verbatim bronze** (`raw/`, `evidence/`, la casa de `hard-doc`, los "
+            "payloads sellados y los `inbox/` legados) jamás se reescribe — es el "
+            "rastro de auditoría (spec §9.1). Los **records de lectura** escritos con "
+            "el enum histórico se leen con el glosario de §13.2 y migran, si migran, "
+            "por **supersesión mecánica con opt-in humano**: eso es `migrate relabel`, "
+            "no este runner. Reubicar un `inbox/` legado a su casa real es "
+            "`migrate relocate`, también opt-in."),
+    }], "kit-init")
 
 
 def stamp_version(config, report: Report) -> None:
@@ -228,7 +233,8 @@ def next_steps(config) -> list[str]:
                      "proyecto jamás entra a un payload")
     if not any(config.investigations.glob("*/00-protocol.md")):
         steps.append("diseñar el primer plan de unidades con `/inception-kit:plan`")
-    steps.append("verificar con `doctor`")
+    steps.append("regenerar los derivados (`derive-status`, `derive-index`) y "
+                 "verificar con `doctor`")
     return steps
 
 
@@ -253,11 +259,15 @@ def main() -> None:
     installation = Installation(root)
     previous = installed_version(config, installation)
 
-    seed_structure(config, report)
+    # Las migraciones corren ANTES de sembrar: un repo viejo trae sus registries
+    # en formato anterior, y sembrar encima crearía un archivo de datos vacío
+    # junto a la tabla que hay que convertir. Migrar primero, rellenar después.
     run_migrations(config, installation, report, previous)
+    seed_structure(config, report)
     vendor_kit(config, installation, report)
     install_shim(config, installation, report)
     stamp_version(config, report)
+    refresh_derived(root, report)
 
     if not report.changes:
         print("  todo en orden: nada que cambiar.")

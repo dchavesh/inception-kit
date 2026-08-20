@@ -65,6 +65,7 @@ class Unit:
     runs: int
     mode: str
     context: str
+    refresh: str | None
     path: Path
 
     @property
@@ -101,6 +102,7 @@ def load_units(config: Config) -> dict[str, Unit]:
             runs=parse_runs(config, meta, protocol),
             mode=parse_mode(config, meta, protocol),
             context=parse_context(config, meta, protocol),
+            refresh=parse_refresh(config, meta, protocol),
             path=protocol,
         )
     return {unit_id: units[unit_id] for unit_id in sorted(units, key=unit_sort_key)}
@@ -135,6 +137,23 @@ def parse_context(config: Config, meta: dict, protocol: Path) -> str:
         fail(f"{config.relative(protocol)}: `context: {context}` — uno de "
              f"{list(CONTEXT_POSTURES)}")
     return context
+
+
+def parse_refresh(config: Config, meta: dict, protocol: Path) -> str | None:
+    """Cadencia de re-ejecución de la unidad (spec §6.2). Opcional; `<N><w|m|y>`.
+
+    Se declara la CADENCIA, jamás la fecha: la fecha se deriva de la cadencia
+    más el último cierre — un valor derivado almacenado se pudre.
+    """
+    from .dates import parse_cadence
+    raw = meta.get("refresh")
+    if raw in (None, ""):
+        return None
+    if not parse_cadence(raw):
+        fail(f"{config.relative(protocol)}: `refresh: {raw}` fuera de la gramática "
+             "`<N><w|m|y>` (p. ej. `18m`) — la cadencia se declara, la fecha se "
+             "deriva (spec §6.2)")
+    return str(raw).strip().lower()
 
 
 def find_unit_dir(config: Config, unit_id: str) -> Path:

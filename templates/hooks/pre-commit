@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guarda de inmutabilidad del inception-kit (spec §4.1, §4.4).
+"""Guarda de inmutabilidad del inception-kit (spec §4.1, §4.4, §12 G6).
 
 Se instala vía shim en la ruta efectiva de hooks (`core.hooksPath`) y vive
 vendorizado en `.inception-kit/hooks/` — versionado con el repo, sin depender
@@ -7,19 +7,29 @@ del caché del plugin ni de Claude Code.
 
 Rechaza en el commit:
   · modificar/borrar/renombrar records ya commiteados: `raw/`, `01-report`,
-    `02-findings`, `03-sources`, ADRs, `payload.md` sellado (`/launch` lo
-    commitea junto con el sello: commiteado ⇒ lanzado ⇒ record), la casa del
-    bronze sin unidad (`evidence/<class>/`), la casa de la documentación dura
-    y las rutas extra que declare `records.extra_immutable_paths` — donde vive,
-    entre otras cosas, un `inbox/` legado (spec §2.6, §4.4)
+    `02-findings`, `03-sources`, ADRs, `payload.md` sellado, la casa del bronze
+    sin unidad (`evidence/<class>/`), la casa de la documentación dura y las
+    rutas extra que declare `records.extra_immutable_paths` — donde vive, entre
+    otras cosas, un `inbox/` legado (spec §2.6, §4.4)
   · tocar un protocol en `done`; en `frozen`/`running`/`qa` solo se permite
     sellar frontmatter (status hacia adelante, session, constitution, runs,
     mode, context) con cuerpo idéntico
-  · reescribir historia en los registries append-only
+  · pisar contenido en un registry **append-only**, y borrar o alterar una fila
+    en un registry **marcable** — ambos regímenes se verifican sobre el archivo
+    de DATOS (`registry/data/*.jsonl`), que es el registry desde el kit 0.3.0
+  · editar a mano la **vista** de un registry: es derivada, y tiene que ser
+    exactamente la regeneración de sus datos (`registry render`)
+  · pisar lo que un sidecar de procedencia ya declaró: es append-only, porque
+    ahí —y jamás dentro del verbatim— va la incisión de una migración (§9.2)
   · modificar la constitution sin subir `version:` (enmienda ⇒ versión + changelog)
   · cambiar el BLOQUE RATIFICADO de la config (`horizons`, `runs`, `ids`,
     `metrics`, `context`) sin subir `version:` de la constitution en el MISMO
     commit — es una enmienda, no una edición (spec §11.1, §12 G4)
+
+Permite, y esto es contrato y no excepción: **reubicar** un record sin tocarlo
+(spec §9.1 — «reubicar no es reescribir»), siempre que el blob sea idéntico, el
+destino sea otra casa protegida y el MISMO commit deje su rastro en el registry
+de migraciones (§9.2). Es lo que hace `migrate relocate`.
 
 Enmiendas = archivos nuevos, no ediciones. Agregar archivos siempre se permite.
 """
@@ -28,6 +38,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # el hook no ensucia el repo con __pycache__
@@ -35,11 +46,23 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / ".inception-kit" / "lib"))
 
 from kitlib import config as kitconfig                       # noqa: E402
+from kitlib import registry as reg                           # noqa: E402
+from kitlib import registrystore as store                    # noqa: E402
 from kitlib.config import CONFIG_NAME, RATIFIED_KEYS, STATUS_ORDER   # noqa: E402
-from kitlib.registry import APPEND_ONLY                      # noqa: E402
+from kitlib.phrases import without_stamp                     # noqa: E402
+from kitlib.sidecar import SUFFIX as SIDECAR_SUFFIX          # noqa: E402
 
 #: Campos que `/launch` puede sellar sobre un protocol ya congelado (spec §5).
 SEALABLE_KEYS = {"status", "session", "constitution", "runs", "mode", "context"}
+
+
+@dataclass(frozen=True)
+class Change:
+    status: str          # A · M · D · R
+    source_blob: str
+    target_blob: str
+    path: str            # en un rename, la ruta VIEJA (la que era record)
+    target: str | None   # en un rename, la ruta nueva
 
 
 def git(*args: str) -> str:
@@ -52,14 +75,19 @@ def head_exists() -> bool:
                           capture_output=True).returncode == 0
 
 
-def staged_changes() -> list[tuple[str, str]]:
+def staged_changes() -> list[Change]:
     changes = []
-    for line in git("diff", "--cached", "--name-status", "-M").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
+    for line in git("diff", "--cached", "--raw", "-M").splitlines():
+        if not line.startswith(":"):
             continue
-        # En renames el path viejo es el que era record.
-        changes.append((parts[0][0], parts[1]))
+        meta, _, paths = line.partition("\t")
+        fields = meta.split()
+        if len(fields) < 5 or not paths:
+            continue
+        parts = paths.split("\t")
+        changes.append(Change(status=fields[4][0], source_blob=fields[2],
+                              target_blob=fields[3], path=parts[0],
+                              target=parts[1] if len(parts) > 1 else None))
     return changes
 
 
@@ -124,9 +152,32 @@ def check_protocol(path: str, errors: list) -> None:
 
 
 def check_append_only(path: str, errors: list) -> None:
-    head = git("show", f"HEAD:{path}")
-    if not git("show", f":{path}").startswith(head.rstrip("\n")):
-        errors.append(f"{path}: record append-only — el contenido previo no se pisa")
+    problem = store.append_only_violation(git("show", f"HEAD:{path}"),
+                                          git("show", f":{path}"))
+    if problem:
+        errors.append(f"{path}: {problem}")
+
+
+def check_markable(path: str, schema, errors: list) -> None:
+    previous, _ = store.parse(git("show", f"HEAD:{path}"), schema, path)
+    current, broken = store.parse(git("show", f":{path}"), schema, path)
+    for problem in broken:
+        errors.append(problem)
+    for problem in store.markable_violations(schema, previous, current):
+        errors.append(f"{path}: {problem}")
+
+
+def check_view(config, path: str, schema, errors: list) -> None:
+    """La vista de un registry ES la regeneración de sus datos, o no es la vista."""
+    rows, broken = store.parse(git("show", f":{config.relative(store.data_path(config, schema))}"),
+                               schema, schema.data_name)
+    if broken:
+        return  # los datos ya se reportan por su propio camino
+    rendered = store.render(config, schema, rows, "registry render")
+    if without_stamp(git("show", f":{path}")) != without_stamp(rendered):
+        errors.append(f"{path}: vista derivada editada a mano — tiene que ser "
+                      "exactamente la regeneración de sus datos: correr "
+                      "`registry render` (spec §12 G6, §0.2 #1)")
 
 
 def check_constitution(path: str, errors: list) -> None:
@@ -149,8 +200,7 @@ def check_ratified_block(path: str, constitution: str, staged: dict, errors: lis
 
     Los números epistémicos viven en la config (una casa), pero la autoridad
     sigue siendo humana: cambiarlos exige subir `version:` de la constitution
-    **en el mismo commit**. Se compara el significado, no la ortografía — el
-    relabel mecánico del enum de volatilidad no dispara el gate.
+    **en el mismo commit**. Se compara el significado, no la ortografía.
     """
     changed = ratified_diff(path)
     if not changed:
@@ -168,6 +218,28 @@ def check_ratified_block(path: str, constitution: str, staged: dict, errors: lis
                       "`version:` no subió")
 
 
+def is_verified_relocation(change: Change, records: tuple, migrations_staged: bool,
+                           errors: list) -> bool:
+    """§9.1: reubicar no es reescribir — mismo blob, casa protegida y rastro."""
+    if change.status != "R" or change.target is None:
+        return False
+    if change.source_blob != change.target_blob:
+        errors.append(f"{change.path} → {change.target}: renombrado CON cambios — "
+                      "reubicar no es reescribir: el contenido tiene que quedar "
+                      "byte a byte idéntico (spec §9.1)")
+        return False
+    if not any(re.search(pattern, change.target) for pattern in records):
+        errors.append(f"{change.path} → {change.target}: el destino no es una casa "
+                      "protegida — un record no sale del régimen de record (spec §4.4)")
+        return False
+    if not migrations_staged:
+        errors.append(f"{change.path} → {change.target}: reubicación sin rastro — "
+                      "toda migración deja su entrada en el registry de migraciones "
+                      "en el MISMO commit (spec §9.2). Usá `migrate relocate --apply`")
+        return False
+    return True
+
+
 def main() -> None:
     if not head_exists():
         return  # primer commit: nada commiteado ⇒ nada es record todavía
@@ -175,31 +247,53 @@ def main() -> None:
     records = record_patterns(config)
     protocol_re = re.compile(
         rf"^{re.escape(config.data['paths']['investigations'])}/[^/]+/00-protocol\.md$")
-    append_only = {config.relative(config.registry_file(name)) for name in APPEND_ONLY}
+    schemas = {config.relative(store.data_path(config, schema)): schema
+               for schema in reg.data_registries(config)}
+    views = {config.relative(store.view_path(config, schema)): schema
+             for schema in reg.data_registries(config)}
     constitution = config.relative(config.constitution)
+    migrations_data = config.relative(store.data_path(config, reg.MIGRATIONS))
 
     changes = staged_changes()
-    staged = {path: status for status, path in changes}
+    staged = {change.path: change.status for change in changes}
+    migrations_staged = staged.get(migrations_data) in ("M", "A")
 
     errors: list[str] = []
     if staged.get(CONFIG_NAME) == "M":
         check_ratified_block(CONFIG_NAME, constitution, staged, errors)
-    for status, path in changes:
+    for change in changes:
+        path, status = change.path, change.status
         if status == "A":
             continue
-        if any(re.search(pattern, path) for pattern in records):
-            errors.append(f"{path}: record inmutable — no se modifica/borra/renombra; "
-                          "enmienda = archivo nuevo")
+        if path.endswith(SIDECAR_SUFFIX):
+            if status in ("D", "R"):
+                errors.append(f"{path}: sidecar de procedencia — no se borra ni se "
+                              "renombra suelto; viaja con su record (spec §2.2)")
+            else:
+                check_append_only(path, errors)
+        elif path in schemas:
+            schema = schemas[path]
+            if status in ("D", "R"):
+                errors.append(f"{path}: registry — no se borra ni se renombra")
+            elif schema.regime == reg.REGIME_APPEND_ONLY:
+                check_append_only(path, errors)
+            else:
+                check_markable(path, schema, errors)
+        elif path in views:
+            if status in ("D", "R"):
+                errors.append(f"{path}: vista de registry — no se borra ni se renombra")
+            else:
+                check_view(config, path, views[path], errors)
+        elif any(re.search(pattern, path) for pattern in records):
+            if not is_verified_relocation(change, records, migrations_staged, errors):
+                if change.status != "R":
+                    errors.append(f"{path}: record inmutable — no se modifica/borra/"
+                                  "renombra; enmienda = archivo nuevo")
         elif protocol_re.search(path):
             if status in ("D", "R"):
                 errors.append(f"{path}: protocol no se borra ni renombra")
             else:
                 check_protocol(path, errors)
-        elif path in append_only:
-            if status in ("D", "R"):
-                errors.append(f"{path}: record append-only — no se borra")
-            else:
-                check_append_only(path, errors)
         elif path == constitution and status == "M":
             check_constitution(path, errors)
 

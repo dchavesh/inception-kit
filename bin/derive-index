@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Regenera `INDEX.md` — el índice puerta-de-entrada (spec §1.2, §4.5).
+
+Vista derivada de la raíz: responde en una página qué hay y en qué estado, qué
+está decidido, qué está en disputa, qué síntesis rige y dónde vive cada clase de
+cosa. **Jamás se edita a mano** — ninguna regla vive ahí: si se borra, solo se
+pierde el atajo para encontrarla.
+
+Uso: derive-index [--quiet]
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kitlib import config as kitconfig
+from kitlib.indexview import build_index, index_path
+
+
+def main() -> None:
+    config = kitconfig.load()
+    content = build_index(config)
+    out = index_path(config)
+    out.write_text(content, encoding="utf-8")
+    if "--quiet" not in sys.argv:
+        print(content)
+    print(f"[escrito: {config.relative(out)}]", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
