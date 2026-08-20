@@ -46,10 +46,10 @@ humano qué unidad lo destila** — y el bronze **se queda donde está**: la uni
 lo cita por ruta y `sha256`, no se lo lleva. Reubicar bronze es otra operación,
 es opt-in y es de `/migrate`.
 
-*(Constancia: la spec declara el medallion para el bronze sin unidad pero no le
-declara casa al silver fuera de una unidad. Esta resolución —la unidad es la
-casa, el bronze puede quedarse afuera y se cita— queda anotada para el batch de
-enmiendas v0.4.)*
+Esto es la letra, no una resolución de esta skill: **§2.2 y §5 le declaran casa
+al silver y al gold de un bronze sin unidad** —la de la unidad que aloja la
+destilación— y dejan escrito que mudar el bronze es migración opt-in (§9.1),
+jamás un efecto de destilar.
 
 ## 3. Escribir el silver — extracción, no interpretación
 
